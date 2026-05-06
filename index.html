@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Budget Cockpit</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
 
@@ -1756,41 +1757,80 @@ document.getElementById('calNext').onclick = () => {
 };
 
 // ============================================================
-// GOOGLE OAUTH (stub — real OAuth requires backend redirect)
+// GOOGLE OAUTH — Real implementation via Google Identity Services
 // ============================================================
-let googleUser = null;
+const GOOGLE_CLIENT_ID = '558206043149-gv95cmiitlpse6mtnc0ts8pd3dct1aob.apps.googleusercontent.com';
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 
-function handleGoogleSignIn() {
-  // Real implementation requires OAuth 2.0 PKCE or a backend.
-  // For a fully self-contained HTML file, we simulate the sign-in UI.
-  // Users can enter their Google token manually for Drive API use.
-  const clientId = prompt('Enter your Google OAuth Client ID (or leave blank to demo):');
-  if (!clientId) {
-    // Demo mode
-    googleUser = { name: 'Demo User', email: 'demo@example.com', token: null };
-    updateGoogleUI();
+let googleUser = null;
+let driveAccessToken = null;
+let tokenClient = null;
+
+// Initialise the GIS token client once the GSI library is ready.
+// We poll briefly in case the script hasn't finished loading yet.
+function initTokenClient() {
+  if (typeof google === 'undefined' || !google.accounts) {
+    setTimeout(initTokenClient, 300);
     return;
   }
-  // In a real deployment, initiate OAuth PKCE flow
-  alert('For full Google Sign-In, this app needs to be hosted at an authorized redirect URI.\nIn demo mode, Drive sync uses a personal access token.\n\nTo enable Drive sync, go to Settings and enter your Google access token.');
-  googleUser = { name: 'User', email: clientId, token: null };
-  updateGoogleUI();
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: DRIVE_SCOPE,
+    callback: (response) => {
+      if (response.error) {
+        setSyncStatus('✗ Sign-in failed: ' + response.error, true);
+        return;
+      }
+      driveAccessToken = response.access_token;
+      // Fetch the user's email via the userinfo endpoint
+      fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: 'Bearer ' + driveAccessToken }
+      }).then(r => r.json()).then(info => {
+        googleUser = {
+          name: info.name || 'Google User',
+          email: info.email || '',
+          token: driveAccessToken
+        };
+        updateGoogleUI();
+        setSyncStatus('✓ Signed in as ' + googleUser.email);
+      }).catch(() => {
+        googleUser = { name: 'Google User', email: '', token: driveAccessToken };
+        updateGoogleUI();
+        setSyncStatus('✓ Signed in');
+      });
+    }
+  });
+}
+initTokenClient();
+
+function handleGoogleSignIn() {
+  if (!tokenClient) {
+    setSyncStatus('✗ Google library not loaded yet — try again in a moment.', true);
+    return;
+  }
+  // Prompt the user to pick an account every time for clarity
+  tokenClient.requestAccessToken({ prompt: 'select_account' });
 }
 
 function updateGoogleUI() {
   if (googleUser) {
     document.getElementById('cloudSection').style.display = 'none';
     document.getElementById('cloudSyncSection').style.display = 'block';
-    document.getElementById('userBadge').textContent = googleUser.email;
+    document.getElementById('userBadge').textContent = googleUser.email || 'Signed in';
     document.getElementById('userBadge').style.display = 'block';
     document.getElementById('driveSync').style.display = '';
     document.getElementById('googleSignIn').style.display = 'none';
-    S.googleUser = googleUser;
+    // Persist the user identity (not the token — tokens are short-lived)
+    S.googleUser = { name: googleUser.name, email: googleUser.email };
     saveState();
   }
 }
 
 function googleSignOut() {
+  if (driveAccessToken && typeof google !== 'undefined') {
+    google.accounts.oauth2.revoke(driveAccessToken, () => {});
+  }
+  driveAccessToken = null;
   googleUser = null;
   S.googleUser = null;
   document.getElementById('cloudSection').style.display = 'block';
@@ -1798,55 +1838,97 @@ function googleSignOut() {
   document.getElementById('userBadge').style.display = 'none';
   document.getElementById('driveSync').style.display = 'none';
   document.getElementById('googleSignIn').style.display = '';
+  setSyncStatus('');
   saveState();
 }
 
-function saveToDrive() {
-  // Drive API call — requires valid OAuth token
-  const token = prompt('Enter your Google OAuth access token to save to Drive:');
-  if (!token) return;
-  const data = JSON.stringify(S, null, 2);
-  const metadata = { name: 'budget-system.json', mimeType: 'application/json' };
-  const form = new FormData();
-  form.append('metadata', new Blob([JSON.stringify(metadata)], {type:'application/json'}));
-  form.append('file', new Blob([data], {type:'application/json'}));
+function setSyncStatus(msg, isError) {
+  const el = document.getElementById('syncStatus');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.color = isError ? 'var(--red)' : 'var(--text3)';
+}
 
-  fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-    method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + token },
-    body: form
-  }).then(r => r.json()).then(res => {
-    if (res.id) {
-      document.getElementById('syncStatus').textContent = '✓ Saved to Drive: ' + res.name + ' — ' + new Date().toLocaleTimeString();
-    } else {
-      document.getElementById('syncStatus').textContent = '✗ Error: ' + (res.error?.message || 'Unknown error');
-    }
-  }).catch(err => {
-    document.getElementById('syncStatus').textContent = '✗ ' + err.message;
+// ---- Drive helpers ----
+
+// Find existing file ID in Drive so we can update rather than duplicate
+function findDriveFileId(token) {
+  return fetch(
+    "https://www.googleapis.com/drive/v3/files?q=name%3D'budget-system.json'%20and%20trashed%3Dfalse&spaces=drive&fields=files(id,name)",
+    { headers: { Authorization: 'Bearer ' + token } }
+  ).then(r => r.json()).then(res => {
+    const files = res.files || [];
+    return files.length ? files[0].id : null;
   });
 }
 
+function saveToDrive() {
+  if (!driveAccessToken) {
+    setSyncStatus('✗ Not signed in — click Sign in with Google first.', true);
+    return;
+  }
+  setSyncStatus('Saving…');
+  const data = JSON.stringify(S, null, 2);
+
+  findDriveFileId(driveAccessToken).then(existingId => {
+    if (existingId) {
+      // PATCH — update existing file content
+      return fetch(
+        `https://www.googleapis.com/upload/drive/v3/files/${existingId}?uploadType=media`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: 'Bearer ' + driveAccessToken,
+            'Content-Type': 'application/json'
+          },
+          body: data
+        }
+      ).then(r => r.json());
+    } else {
+      // POST — create new file with multipart (metadata + content)
+      const metadata = { name: 'budget-system.json', mimeType: 'application/json' };
+      const form = new FormData();
+      form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+      form.append('file', new Blob([data], { type: 'application/json' }));
+      return fetch(
+        'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+        {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + driveAccessToken },
+          body: form
+        }
+      ).then(r => r.json());
+    }
+  }).then(res => {
+    if (res.id) {
+      setSyncStatus('✓ Saved to Drive — ' + new Date().toLocaleTimeString());
+    } else {
+      setSyncStatus('✗ ' + (res.error?.message || 'Unknown error'), true);
+    }
+  }).catch(err => setSyncStatus('✗ ' + err.message, true));
+}
+
 function loadFromDrive() {
-  const token = prompt('Enter your Google OAuth access token to load from Drive:');
-  if (!token) return;
-  fetch("https://www.googleapis.com/drive/v3/files?q=name%3D'budget-system.json'&spaces=drive&fields=files(id,name)", {
-    headers: { 'Authorization': 'Bearer ' + token }
-  }).then(r => r.json()).then(res => {
-    const files = res.files || [];
-    if (!files.length) { alert('No budget-system.json found in Drive.'); return; }
-    const fileId = files[0].id;
-    return fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-      headers: { 'Authorization': 'Bearer ' + token }
-    });
-  }).then(r => r && r.json()).then(data => {
+  if (!driveAccessToken) {
+    setSyncStatus('✗ Not signed in — click Sign in with Google first.', true);
+    return;
+  }
+  setSyncStatus('Loading…');
+  findDriveFileId(driveAccessToken).then(fileId => {
+    if (!fileId) {
+      setSyncStatus('✗ No budget-system.json found in Drive.', true);
+      return null;
+    }
+    return fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+      { headers: { Authorization: 'Bearer ' + driveAccessToken } }
+    ).then(r => r.json());
+  }).then(data => {
     if (!data) return;
     S = { ...DEFAULT_STATE, ...data };
     saveState(); initUI();
-    document.getElementById('syncStatus').textContent = '✓ Loaded from Drive — ' + new Date().toLocaleTimeString();
-    alert('Data loaded from Google Drive.');
-  }).catch(err => {
-    document.getElementById('syncStatus').textContent = '✗ ' + err.message;
-  });
+    setSyncStatus('✓ Loaded from Drive — ' + new Date().toLocaleTimeString());
+  }).catch(err => setSyncStatus('✗ ' + err.message, true));
 }
 
 document.getElementById('driveSync').onclick = saveToDrive;
@@ -1874,10 +1956,16 @@ function initUI() {
   loadSettingsUI();
   updateRolloverFromTransactions();
 
-  // Restore google user
-  if (S.googleUser) {
-    googleUser = S.googleUser;
-    updateGoogleUI();
+  // Restore google user identity (display only — token must be re-acquired each session)
+  if (S.googleUser && S.googleUser.email) {
+    googleUser = { name: S.googleUser.name, email: S.googleUser.email };
+    document.getElementById('cloudSection').style.display = 'none';
+    document.getElementById('cloudSyncSection').style.display = 'block';
+    document.getElementById('userBadge').textContent = googleUser.email;
+    document.getElementById('userBadge').style.display = 'block';
+    document.getElementById('driveSync').style.display = '';
+    document.getElementById('googleSignIn').style.display = 'none';
+    setSyncStatus('Session expired — click Save/Load to re-authenticate.');
   }
 }
 
