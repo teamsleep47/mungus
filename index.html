@@ -380,20 +380,127 @@ select option{background:var(--bg3);}
 </head>
 <body data-theme="dark">
 
+<!-- ============================================================
+     LOGIN WALL — shown until signed in
+     ============================================================ -->
+<div id="loginWall" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:500;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;">
+
+  <!-- Top bar -->
+  <div style="position:absolute;top:0;left:0;right:0;padding:16px 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
+    <div style="font-family:var(--mono);font-size:15px;font-weight:600;color:var(--accent);">◈ BUDGET COCKPIT</div>
+    <button class="btn btn-sm" id="loginThemeToggle">☽</button>
+  </div>
+
+  <!-- Login card -->
+  <div style="width:100%;max-width:400px;padding:24px;display:flex;flex-direction:column;align-items:center;gap:24px;text-align:center;">
+
+    <!-- Icon -->
+    <div style="width:64px;height:64px;border-radius:16px;background:var(--green-dim);border:1px solid var(--green);display:flex;align-items:center;justify-content:center;font-size:28px;">◈</div>
+
+    <!-- Headline -->
+    <div>
+      <div style="font-family:var(--mono);font-size:22px;font-weight:600;color:var(--text);margin-bottom:8px;">Budget Cockpit</div>
+      <div style="font-size:14px;color:var(--text2);line-height:1.6;max-width:300px;">
+        Your personal finance cockpit. Track income, bills, savings, and daily spending — all in one place.
+      </div>
+    </div>
+
+    <!-- Sign in button -->
+    <button onclick="handleGoogleSignIn()" style="display:flex;align-items:center;justify-content:center;gap:12px;width:100%;padding:13px 20px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:var(--sans);font-size:14px;font-weight:500;cursor:pointer;transition:all .15s;" onmouseover="this.style.background='var(--bg3)';this.style.borderColor='var(--accent)';" onmouseout="this.style.background='var(--bg2)';this.style.borderColor='var(--border2)';">
+      <svg width="20" height="20" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.96 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+        <path fill="none" d="M0 0h48v48H0z"/>
+      </svg>
+      Sign in with Google
+    </button>
+
+    <!-- Subtext -->
+    <div style="font-size:12px;color:var(--text3);line-height:1.6;">
+      Your data is stored locally and optionally in your own Google Drive.<br>We never store your data on our servers.
+    </div>
+
+    <!-- Features list -->
+    <div style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px;text-align:left;display:flex;flex-direction:column;gap:10px;">
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:0.08em;margin-bottom:2px;">WHAT'S INSIDE</div>
+      <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text2);">
+        <span style="color:var(--green);">✓</span> Income, bills & savings tracking
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text2);">
+        <span style="color:var(--green);">✓</span> Daily spending allowance & rollover
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text2);">
+        <span style="color:var(--green);">✓</span> Bill calendar with due-date alerts
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text2);">
+        <span style="color:var(--green);">✓</span> 30-day cash flow forecast
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text2);">
+        <span style="color:var(--green);">✓</span> Google Drive sync across devices
+      </div>
+    </div>
+
+    <div id="loginStatus" style="font-family:var(--mono);font-size:12px;color:var(--text3);min-height:16px;"></div>
+  </div>
+</div>
+
 <header class="app-header">
   <div class="app-title">◈ BUDGET COCKPIT</div>
   <div class="header-actions">
-    <span id="userBadge" style="font-size:12px;color:var(--text3);font-family:var(--mono);display:none;"></span>
     <button class="btn btn-sm" id="themeToggle" title="Toggle theme">☽</button>
     <button class="btn btn-sm btn-accent" id="exportBtn">↓ Export</button>
     <button class="btn btn-sm" id="importBtnTrigger">↑ Import</button>
     <input type="file" id="importFile" accept=".json" style="display:none;">
-    <button class="btn btn-sm" id="googleSignIn">
-      <span style="font-size:11px;font-family:var(--mono);">Google</span>
-    </button>
     <button class="btn btn-sm" id="driveSync" style="display:none;" title="Sync to Google Drive">⟳ Drive</button>
+    <!-- User profile chip — shown when signed in -->
+    <div id="userChip" style="display:none;align-items:center;gap:8px;padding:4px 10px 4px 4px;background:var(--bg3);border:1px solid var(--border);border-radius:20px;cursor:pointer;" onclick="toggleUserMenu()" title="Account options">
+      <div id="userAvatar" style="width:28px;height:28px;border-radius:50%;background:var(--green-dim);border:1px solid var(--green);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--green);flex-shrink:0;overflow:hidden;">
+        <span id="userInitial">?</span>
+        <img id="userAvatarImg" src="" style="display:none;width:28px;height:28px;border-radius:50%;object-fit:cover;">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:1px;max-width:140px;">
+        <div id="userNameChip" style="font-size:12px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+        <div id="userEmailChip" style="font-family:var(--mono);font-size:10px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+      </div>
+      <span style="color:var(--text3);font-size:10px;">▾</span>
+    </div>
+    <!-- Sign in button — shown when not signed in -->
+    <button class="btn btn-sm" id="googleSignIn">
+      <span style="font-size:11px;font-family:var(--mono);">Sign in with Google</span>
+    </button>
   </div>
 </header>
+
+<!-- User dropdown menu -->
+<div id="userMenu" style="display:none;position:fixed;top:49px;right:16px;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);min-width:220px;z-index:200;box-shadow:var(--shadow);overflow:hidden;">
+  <div style="padding:14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+    <div id="userMenuAvatar" style="width:36px;height:36px;border-radius:50%;background:var(--green-dim);border:1px solid var(--green);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:14px;font-weight:600;color:var(--green);flex-shrink:0;overflow:hidden;">
+      <span id="userMenuInitial">?</span>
+      <img id="userMenuAvatarImg" src="" style="display:none;width:36px;height:36px;border-radius:50%;object-fit:cover;">
+    </div>
+    <div style="overflow:hidden;">
+      <div id="userMenuName" style="font-size:13px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+      <div id="userMenuEmail" style="font-family:var(--mono);font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+    </div>
+  </div>
+  <div style="padding:6px;">
+    <div onclick="saveToDrive();toggleUserMenu();" style="padding:8px 10px;border-radius:4px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px;color:var(--text2);" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'">
+      <span>⟳</span> Save to Drive
+    </div>
+    <div onclick="loadFromDrive();toggleUserMenu();" style="padding:8px 10px;border-radius:4px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px;color:var(--text2);" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'">
+      <span>↓</span> Load from Drive
+    </div>
+    <div onclick="navigateTo('settings');toggleUserMenu();" style="padding:8px 10px;border-radius:4px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px;color:var(--text2);" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'">
+      <span>⚙</span> Settings
+    </div>
+    <hr style="border:none;border-top:1px solid var(--border);margin:4px 0;">
+    <div onclick="googleSignOut();toggleUserMenu();" style="padding:8px 10px;border-radius:4px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px;color:var(--red);" onmouseover="this.style.background='var(--red-dim)'" onmouseout="this.style.background='transparent'">
+      <span>↩</span> Sign Out
+    </div>
+  </div>
+</div>
 
 <div class="main-layout">
   <nav class="sidebar">
@@ -1812,6 +1919,7 @@ function initTokenClient() {
         googleUser = {
           name: info.name || 'Google User',
           email: info.email || '',
+          picture: info.picture || '',
           token: driveAccessToken
         };
         updateGoogleUI();
@@ -1836,27 +1944,100 @@ function executePendingDriveAction() {
 function handleGoogleSignIn() {
   if (!tokenClient) {
     setSyncStatus('✗ Google library not loaded yet — try again in a moment.', true);
+    const ls = document.getElementById('loginStatus');
+    if (ls) ls.textContent = 'Google not loaded yet — try again in a moment.';
     return;
   }
+  const ls = document.getElementById('loginStatus');
+  if (ls) ls.textContent = 'Opening Google sign-in…';
   // Prompt the user to pick an account every time for clarity
   tokenClient.requestAccessToken({ prompt: 'select_account' });
 }
 
 function updateGoogleUI() {
   if (googleUser) {
-    document.getElementById('cloudSection').style.display = 'none';
-    document.getElementById('cloudSyncSection').style.display = 'block';
-    const emailLabel = googleUser.email || 'Signed in';
-    document.getElementById('userBadge').textContent = emailLabel;
-    document.getElementById('userBadge').style.display = 'block';
-    document.getElementById('driveSync').style.display = '';
-    document.getElementById('googleSignIn').style.display = 'none';
+    // Hide login wall, show app
+    document.getElementById('loginWall').style.display = 'none';
+    document.getElementById('loginStatus') && (document.getElementById('loginStatus').textContent = '');
+
+    // Settings cloud section
+    const csec = document.getElementById('cloudSection');
+    const cssec = document.getElementById('cloudSyncSection');
+    if (csec) csec.style.display = 'none';
+    if (cssec) cssec.style.display = 'block';
     const signedInEl = document.getElementById('signedInEmail');
-    if (signedInEl) signedInEl.textContent = emailLabel;
-    // Persist the user identity (not the token — tokens are short-lived)
-    S.googleUser = { name: googleUser.name, email: googleUser.email };
+    if (signedInEl) signedInEl.textContent = googleUser.email || 'Signed in';
+
+    // Header chip
+    const chip = document.getElementById('userChip');
+    const gBtn = document.getElementById('googleSignIn');
+    if (chip) chip.style.display = 'flex';
+    if (gBtn) gBtn.style.display = 'none';
+
+    // Populate chip fields
+    const name = googleUser.name || 'Google User';
+    const email = googleUser.email || '';
+    const initial = name.charAt(0).toUpperCase();
+
+    const nameEl = document.getElementById('userNameChip');
+    const emailEl = document.getElementById('userEmailChip');
+    if (nameEl) nameEl.textContent = name;
+    if (emailEl) emailEl.textContent = email;
+
+    // Populate dropdown menu
+    const menuName = document.getElementById('userMenuName');
+    const menuEmail = document.getElementById('userMenuEmail');
+    const menuInit = document.getElementById('userMenuInitial');
+    const chipInit = document.getElementById('userInitial');
+    if (menuName) menuName.textContent = name;
+    if (menuEmail) menuEmail.textContent = email;
+    if (menuInit) menuInit.textContent = initial;
+    if (chipInit) chipInit.textContent = initial;
+
+    // Avatar photo if available
+    if (googleUser.picture) {
+      ['userAvatarImg','userMenuAvatarImg'].forEach(id => {
+        const img = document.getElementById(id);
+        if (img) { img.src = googleUser.picture; img.style.display = 'block'; }
+      });
+      ['userInitial','userMenuInitial'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+      });
+    }
+
+    // Drive button in header
+    const driveBtn = document.getElementById('driveSync');
+    if (driveBtn) driveBtn.style.display = '';
+
+    // Persist identity
+    S.googleUser = { name: googleUser.name, email: googleUser.email, picture: googleUser.picture };
     saveState();
   }
+}
+
+function toggleUserMenu() {
+  const menu = document.getElementById('userMenu');
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+
+// Close menu when clicking outside
+document.addEventListener('click', e => {
+  const menu = document.getElementById('userMenu');
+  const chip = document.getElementById('userChip');
+  if (menu && !menu.contains(e.target) && chip && !chip.contains(e.target)) {
+    menu.style.display = 'none';
+  }
+});
+
+function navigateTo(view) {
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const navEl = document.querySelector(`.nav-item[data-view="${view}"]`);
+  if (navEl) navEl.classList.add('active');
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  const viewEl = document.getElementById('view-' + view);
+  if (viewEl) viewEl.classList.add('active');
+  renderView(view);
 }
 
 function googleSignOut() {
@@ -1866,11 +2047,37 @@ function googleSignOut() {
   driveAccessToken = null;
   googleUser = null;
   S.googleUser = null;
-  document.getElementById('cloudSection').style.display = 'block';
-  document.getElementById('cloudSyncSection').style.display = 'none';
-  document.getElementById('userBadge').style.display = 'none';
-  document.getElementById('driveSync').style.display = 'none';
-  document.getElementById('googleSignIn').style.display = '';
+
+  // Reset header chip
+  const chip = document.getElementById('userChip');
+  const gBtn = document.getElementById('googleSignIn');
+  if (chip) chip.style.display = 'none';
+  if (gBtn) gBtn.style.display = '';
+
+  // Reset settings section
+  const csec = document.getElementById('cloudSection');
+  const cssec = document.getElementById('cloudSyncSection');
+  if (csec) csec.style.display = 'block';
+  if (cssec) cssec.style.display = 'none';
+
+  // Reset avatar images
+  ['userAvatarImg','userMenuAvatarImg'].forEach(id => {
+    const img = document.getElementById(id);
+    if (img) { img.style.display = 'none'; img.src = ''; }
+  });
+  ['userInitial','userMenuInitial'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = '';
+  });
+
+  // Hide drive button
+  const driveBtn = document.getElementById('driveSync');
+  if (driveBtn) driveBtn.style.display = 'none';
+
+  // Show login wall
+  document.getElementById('loginWall').style.display = 'flex';
+  document.getElementById('userMenu').style.display = 'none';
+
   setSyncStatus('');
   saveState();
 }
@@ -2017,6 +2224,21 @@ function initUI() {
 loadState();
 initUI();
 checkLayout();
+
+// Show login wall if not previously signed in
+if (!S.googleUser || !S.googleUser.email) {
+  document.getElementById('loginWall').style.display = 'flex';
+} else {
+  document.getElementById('loginWall').style.display = 'none';
+}
+
+// Login wall theme toggle mirrors main theme
+document.getElementById('loginThemeToggle').onclick = function() {
+  const curr = document.body.getAttribute('data-theme');
+  document.body.setAttribute('data-theme', curr === 'dark' ? 'light' : 'dark');
+  this.textContent = curr === 'dark' ? '☀' : '☽';
+  document.getElementById('themeToggle').textContent = this.textContent;
+};
 
 // Keyboard shortcut: press 'n' to add transaction
 document.addEventListener('keydown', e => {
