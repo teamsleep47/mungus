@@ -722,23 +722,45 @@ select option{background:var(--bg3);}
 
       <div class="card">
         <div class="card-header"><div class="card-title">Cloud Sync</div></div>
-        <div style="font-size:13px;color:var(--text2);margin-bottom:12px;">
-          Sign in with Google to enable manual Drive sync. Core features work without signing in.
+        <div style="font-size:13px;color:var(--text2);margin-bottom:14px;">
+          Sign in with Google to save and load your budget data from Google Drive. All other features work without signing in.
         </div>
+
+        <!-- Not signed in -->
         <div id="cloudSection">
-          <button class="google-btn" onclick="handleGoogleSignIn()">
+          <button class="google-btn" onclick="handleGoogleSignIn()" style="margin-bottom:8px;">
             <div class="google-logo"></div>
             Sign in with Google
           </button>
-        </div>
-        <div id="cloudSyncSection" style="display:none;">
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <button class="btn btn-accent" onclick="saveToDrive()">⟳ Save to Drive</button>
-            <button class="btn" onclick="loadFromDrive()">↓ Load from Drive</button>
-            <button class="btn" onclick="googleSignOut()">Sign Out</button>
+          <div style="font-size:11px;color:var(--text3);">
+            You'll see a Google account picker popup. Make sure popups are not blocked in your browser.
           </div>
-          <div id="syncStatus" style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-top:8px;"></div>
         </div>
+
+        <!-- Signed in -->
+        <div id="cloudSyncSection" style="display:none;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding:10px 12px;background:var(--green-dim);border:1px solid var(--green);border-radius:var(--radius);">
+            <span style="color:var(--green);font-size:16px;">✓</span>
+            <div>
+              <div style="font-family:var(--mono);font-size:12px;color:var(--green);" id="signedInEmail">Signed in</div>
+              <div style="font-size:11px;color:var(--text3);">Connected to Google Drive</div>
+            </div>
+            <button class="btn btn-sm" onclick="googleSignOut()" style="margin-left:auto;">Sign Out</button>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-accent" onclick="saveToDrive()" style="flex:1;justify-content:center;">
+              ⟳ Save to Drive
+            </button>
+            <button class="btn" onclick="loadFromDrive()" style="flex:1;justify-content:center;">
+              ↓ Load from Drive
+            </button>
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-top:8px;">
+            Saves as <span style="font-family:var(--mono);">budget-system.json</span> in your Google Drive root. Manual only — no background syncing.
+          </div>
+        </div>
+
+        <div id="syncStatus" style="font-family:var(--mono);font-size:12px;margin-top:10px;min-height:18px;"></div>
       </div>
 
       <div class="card">
@@ -1760,6 +1782,7 @@ document.getElementById('calNext').onclick = () => {
 // GOOGLE OAUTH — Real implementation via Google Identity Services
 // ============================================================
 const GOOGLE_CLIENT_ID = '558206043149-gv95cmiitlpse6mtnc0ts8pd3dct1aob.apps.googleusercontent.com';
+let pendingDriveAction = null; // 'save' or 'load' — queued before sign-in completes
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 
 let googleUser = null;
@@ -1793,15 +1816,22 @@ function initTokenClient() {
         };
         updateGoogleUI();
         setSyncStatus('✓ Signed in as ' + googleUser.email);
+        executePendingDriveAction();
       }).catch(() => {
         googleUser = { name: 'Google User', email: '', token: driveAccessToken };
         updateGoogleUI();
         setSyncStatus('✓ Signed in');
+        executePendingDriveAction();
       });
     }
   });
 }
 initTokenClient();
+
+function executePendingDriveAction() {
+  if (pendingDriveAction === 'save') { pendingDriveAction = null; setTimeout(saveToDrive, 300); }
+  else if (pendingDriveAction === 'load') { pendingDriveAction = null; setTimeout(loadFromDrive, 300); }
+}
 
 function handleGoogleSignIn() {
   if (!tokenClient) {
@@ -1816,10 +1846,13 @@ function updateGoogleUI() {
   if (googleUser) {
     document.getElementById('cloudSection').style.display = 'none';
     document.getElementById('cloudSyncSection').style.display = 'block';
-    document.getElementById('userBadge').textContent = googleUser.email || 'Signed in';
+    const emailLabel = googleUser.email || 'Signed in';
+    document.getElementById('userBadge').textContent = emailLabel;
     document.getElementById('userBadge').style.display = 'block';
     document.getElementById('driveSync').style.display = '';
     document.getElementById('googleSignIn').style.display = 'none';
+    const signedInEl = document.getElementById('signedInEmail');
+    if (signedInEl) signedInEl.textContent = emailLabel;
     // Persist the user identity (not the token — tokens are short-lived)
     S.googleUser = { name: googleUser.name, email: googleUser.email };
     saveState();
@@ -1910,7 +1943,9 @@ function saveToDrive() {
 
 function loadFromDrive() {
   if (!driveAccessToken) {
-    setSyncStatus('✗ Not signed in — click Sign in with Google first.', true);
+    if (!tokenClient) { setSyncStatus('Google library not loaded yet — try again.', true); return; }
+    pendingDriveAction = 'load';
+    tokenClient.requestAccessToken({ prompt: 'select_account' });
     return;
   }
   setSyncStatus('Loading…');
@@ -1931,7 +1966,17 @@ function loadFromDrive() {
   }).catch(err => setSyncStatus('✗ ' + err.message, true));
 }
 
-document.getElementById('driveSync').onclick = saveToDrive;
+document.getElementById('driveSync').onclick = () => {
+  if (!driveAccessToken) {
+    // Not signed in — trigger sign-in then save
+    if (!tokenClient) { setSyncStatus('Google library not loaded yet — try again.', true); return; }
+    tokenClient.requestAccessToken({ prompt: 'select_account' });
+    // saveToDrive will be called after sign-in completes via the callback
+    pendingDriveAction = 'save';
+  } else {
+    saveToDrive();
+  }
+};
 document.getElementById('googleSignIn').onclick = handleGoogleSignIn;
 
 // ============================================================
