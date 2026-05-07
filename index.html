@@ -1796,380 +1796,408 @@ function renderView(v){
 }
 
 // ════════════════════════════════════════════════════════════
-// GOOGLE AUTH — mirrors prereq script pattern exactly
-// appDataFolder scope = private to this app, no file picker
-// Session token caching = no re-auth on refresh
-// One-time consent popup, then silent forever
+// GOOGLE AUTH & DRIVE SYNC
+// ─ drive.file scope (already approved in your console)
+// ─ sessionStorage token cache: zero UI on refresh
+// ─ One-time consent popup, then silent forever
+// ─ Auto-save to Drive 2s after every change
+// ─ Auto-load from Drive on every sign-in
 // ════════════════════════════════════════════════════════════
-const GCLIENT_ID   = '558206043149-gv95cmiitlpse6mtnc0ts8pd3dct1aob.apps.googleusercontent.com';
-const DRIVE_SCOPE  = 'https://www.googleapis.com/auth/drive.appdata';
-const DRIVE_FILE   = 'savings_data.json';
+const GCLIENT_ID  = '558206043149-gv95cmiitlpse6mtnc0ts8pd3dct1aob.apps.googleusercontent.com';
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const DRIVE_FILE  = 'savings_budget.json';
 
 let googleUser     = null;
 let driveToken     = null;
-let driveFileId    = null;
+let driveFileId    = null;  // cached file ID so we don't search every save
 let driveSaveTimer = null;
+let _syncing       = false; // guard against concurrent saves
 
-// ── Session token cache (survives page refresh, cleared on tab close) ──
-function saveTokenSession(token){
-  try{ sessionStorage.setItem('sav_token',token); sessionStorage.setItem('sav_token_ts',Date.now().toString()); }catch(e){}
-}
-function loadTokenSession(){
-  try{
-    const t=sessionStorage.getItem('sav_token');
-    const ts=parseInt(sessionStorage.getItem('sav_token_ts')||'0');
-    if(t&&(Date.now()-ts)<55*60*1000) return t; // valid for 55 min
-  }catch(e){}
-  return null;
-}
-function clearTokenSession(){ try{ sessionStorage.removeItem('sav_token'); sessionStorage.removeItem('sav_token_ts'); }catch(e){} }
+// ── Token cache in sessionStorage ───────────────────────────
+// Survives page refresh within the same browser session.
+// Cleared automatically when the tab/browser is closed.
+function _tokenSave(t){ try{ sessionStorage.setItem('sav_tk',t); sessionStorage.setItem('sav_tk_ts',Date.now()+''); }catch(e){} }
+function _tokenLoad(){ try{ const t=sessionStorage.getItem('sav_tk'),ts=+sessionStorage.getItem('sav_tk_ts')||0; if(t&&Date.now()-ts<54e5) return t; }catch(e){} return null; }
+function _tokenClear(){ try{ sessionStorage.removeItem('sav_tk'); sessionStorage.removeItem('sav_tk_ts'); }catch(e){} }
 
-// ── Init Google Sign-In ──────────────────────────────────────
-function initGSI(){
-  if(typeof google==='undefined'||!google.accounts){ setTimeout(initGSI,300); return; }
+// ── User cache in localStorage ───────────────────────────────
+function _userSave(u){ try{ localStorage.setItem('sav_usr',JSON.stringify(u)); }catch(e){} }
+function _userLoad(){ try{ const r=localStorage.getItem('sav_usr'); return r?JSON.parse(r):null; }catch(e){ return null; } }
+function _userClear(){ try{ localStorage.removeItem('sav_usr'); }catch(e){} }
 
-  const savedUser = localStorage.getItem('sav_guser');
-
-  // 1. If we have a fresh session token, use it immediately — no popup
-  const cachedToken = loadTokenSession();
-  if(cachedToken && savedUser){
-    driveToken = cachedToken;
-    try{ googleUser = JSON.parse(savedUser); }catch(e){}
-    unlockApp();
-    loadFromDrive(true); // silent background load
-    scheduleTokenRefresh();
-    return;
-  }
-
-  // 2. No session token — try silent OAuth (no UI)
-  if(savedUser){
-    try{ googleUser = JSON.parse(savedUser); }catch(e){}
-    trySilentAuth();
-  } else {
-    // First ever visit — show login wall
-    showLoginWall();
-  }
-}
-
-function scheduleTokenRefresh(){
-  const ts = parseInt(sessionStorage.getItem('sav_token_ts')||'0');
-  const age = Date.now()-ts;
-  const delay = Math.max(0, 50*60*1000 - age); // refresh at 50 min
-  setTimeout(()=>trySilentAuth(), delay);
-}
-
-async function trySilentAuth(){
-  return new Promise(resolve=>{
-    if(typeof google==='undefined'){ resolve(false); return; }
-    try{
-      const tc = google.accounts.oauth2.initTokenClient({
-        client_id: GCLIENT_ID, scope: DRIVE_SCOPE, prompt:'',
-        callback: async resp=>{
-          if(resp.access_token){
-            driveToken = resp.access_token;
-            saveTokenSession(resp.access_token);
-            // Refresh user info silently
-            try{
-              const u = await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+resp.access_token}}).then(r=>r.json());
-              googleUser={name:u.name||'User',email:u.email||'',picture:u.picture||''};
-              localStorage.setItem('sav_guser',JSON.stringify(googleUser));
-            }catch(e){ /* use cached user */ }
-            unlockApp();
-            loadFromDrive(true);
-            scheduleTokenRefresh();
-            resolve(true);
-          } else {
-            showLoginWall();
-            resolve(false);
-          }
-        }
-      });
-      tc.requestAccessToken({prompt:''});
-    }catch(e){ showLoginWall(); resolve(false); }
+// ── Create a fresh token client each time (avoids stale state) ──
+function _makeTokenClient(onToken, promptOverride){
+  return google.accounts.oauth2.initTokenClient({
+    client_id: GCLIENT_ID,
+    scope: DRIVE_SCOPE,
+    prompt: promptOverride !== undefined ? promptOverride : '',
+    callback: onToken
   });
 }
 
-// Called from login wall button
-function requestGoogleSignIn(){
-  const statusEl = document.getElementById('loginStatus');
+// ── Main init — called once after page load ──────────────────
+function initGSI(){
   if(typeof google==='undefined'||!google.accounts){
-    if(statusEl) statusEl.textContent='Google loading — try again in a moment.';
+    setTimeout(initGSI,400); return;
+  }
+
+  const cachedUser  = _userLoad();
+  const cachedToken = _tokenLoad();
+
+  // Path 1: We have BOTH a cached user AND a fresh session token
+  // → Use immediately, no network call, no popup, instant
+  if(cachedUser && cachedToken){
+    googleUser  = cachedUser;
+    driveToken  = cachedToken;
+    _applyUserUI();
+    _hideLoginWall();
+    // Load Drive data quietly in the background
+    _loadDrive(true);
+    // Schedule a token refresh before the 55-min mark
+    _scheduleRefresh();
     return;
   }
-  if(statusEl) statusEl.textContent='Opening Google sign-in…';
-  const hasUser = !!localStorage.getItem('sav_guser');
+
+  // Path 2: We know who the user is but token expired
+  // → Silent token request with login_hint (no popup if already consented)
+  if(cachedUser){
+    googleUser = cachedUser;
+    _applyUserUI(); // show their name/pic immediately from cache
+    _hideLoginWall();
+    _silentRefresh(cachedUser.email, true); // true = load Drive after
+    return;
+  }
+
+  // Path 3: Never signed in before → show login wall
+  _showLoginWall();
+}
+
+// Refresh token silently (no user interaction)
+function _silentRefresh(loginHint, loadAfter){
   try{
-    const tc = google.accounts.oauth2.initTokenClient({
-      client_id: GCLIENT_ID, scope: DRIVE_SCOPE,
-      callback: async resp=>{
-        if(resp.access_token){
-          driveToken = resp.access_token;
-          saveTokenSession(resp.access_token);
-          try{
-            const u = await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+resp.access_token}}).then(r=>r.json());
-            googleUser={name:u.name||'User',email:u.email||'',picture:u.picture||''};
-            localStorage.setItem('sav_guser',JSON.stringify(googleUser));
-          }catch(e){ googleUser={name:'User',email:'',picture:''}; }
-          if(statusEl) statusEl.textContent='';
-          unlockApp();
-          await loadFromDrive(true);
-          scheduleTokenRefresh();
-        } else {
-          if(statusEl) statusEl.textContent='Sign-in failed. Please try again.';
-        }
+    const tc = _makeTokenClient(resp=>{
+      if(resp.access_token){
+        driveToken = resp.access_token;
+        _tokenSave(resp.access_token);
+        _fetchUserInfo(resp.access_token).then(()=>{
+          if(loadAfter) _loadDrive(true);
+          _scheduleRefresh();
+        });
+      } else {
+        // Silent failed (cookie cleared etc) — show wall
+        _showLoginWall();
       }
-    });
-    // First time = select_account (shows the consent screen once)
-    // Returning user = prompt:'' (silent)
-    tc.requestAccessToken({prompt: hasUser ? '' : 'select_account'});
+    }, '');
+    tc.requestAccessToken(loginHint ? {login_hint: loginHint} : {});
+  }catch(e){ _showLoginWall(); }
+}
+
+// Schedule a background token refresh at the 50-min mark
+function _scheduleRefresh(){
+  const ts  = +sessionStorage.getItem('sav_tk_ts')||0;
+  const age = Date.now()-ts;
+  const wait = Math.max(10000, 50*60*1000 - age);
+  setTimeout(()=>{
+    const hint = googleUser?.email||'';
+    _silentRefresh(hint, false);
+  }, wait);
+}
+
+// ── Called when user clicks "Continue with Google" ───────────
+function requestGoogleSignIn(){
+  const st = document.getElementById('loginStatus');
+  if(typeof google==='undefined'||!google.accounts){
+    if(st) st.textContent='Google still loading — try again.'; return;
+  }
+  if(st) st.textContent='Opening Google…';
+
+  const isReturning = !!_userLoad();
+
+  try{
+    // Returning user: prompt:'' → silent if already consented
+    // New user: 'select_account' → shows account picker + consent once
+    const tc = _makeTokenClient(async resp=>{
+      if(resp.access_token){
+        driveToken = resp.access_token;
+        _tokenSave(resp.access_token);
+        await _fetchUserInfo(resp.access_token);
+        if(st) st.textContent='';
+        _hideLoginWall();
+        _applyUserUI();
+        await _loadDrive(true); // load existing data first
+        _scheduleRefresh();
+      } else {
+        if(st) st.textContent='Sign-in failed — try again.';
+      }
+    }, isReturning ? '' : 'select_account');
+
+    tc.requestAccessToken({});
   }catch(e){
-    if(statusEl) statusEl.textContent='Sign-in error. Refresh and try again.';
+    if(st) st.textContent='Error: '+e.message;
   }
 }
 
-function showLoginWall(){
-  document.getElementById('loginWall').style.display='flex';
+// Fetch name/email/picture from Google
+async function _fetchUserInfo(token){
+  try{
+    const u = await fetch('https://www.googleapis.com/oauth2/v3/userinfo',
+      {headers:{Authorization:'Bearer '+token}}).then(r=>r.json());
+    googleUser = {name:u.name||'User', email:u.email||'', picture:u.picture||''};
+    _userSave(googleUser);
+    _applyUserUI();
+  }catch(e){
+    if(!googleUser) googleUser={name:'User',email:'',picture:''};
+  }
 }
 
-function unlockApp(){
-  // Hide login wall, show app
-  const lw = document.getElementById('loginWall');
-  if(lw) lw.style.display='none';
-  updateSignedInUI();
-}
-
-function updateSignedInUI(){
+// ── Apply Google user to every UI surface ───────────────────
+function _applyUserUI(){
   if(!googleUser) return;
-  const name  = googleUser.name||'User';
-  const email = googleUser.email||'';
+  const name  = googleUser.name  || 'User';
+  const email = googleUser.email || '';
   const init  = name.charAt(0).toUpperCase();
 
-  // Header chip
-  const chip = document.getElementById('userChip');
-  const signInBtn = document.getElementById('hdrSignInBtn');
-  if(chip) chip.classList.add('visible');
-  if(signInBtn) signInBtn.style.display='none';
+  // ① Header chip — this is the "PERIOD" requirement
+  const chip   = document.getElementById('userChip');
+  const sigBtn = document.getElementById('hdrSignInBtn');
+  if(chip)   chip.classList.add('visible');
+  if(sigBtn) sigBtn.style.display='none';
 
-  const setTxt=(id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=v; };
-  setTxt('chipName',name); setTxt('chipEmail',email); setTxt('chipInitial',init);
-  setTxt('menuName',name); setTxt('menuEmail',email); setTxt('menuInitial',init);
+  const _s=(id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=v; };
+  _s('chipName',name); _s('chipEmail',email); _s('chipInitial',init);
+  _s('menuName',name); _s('menuEmail',email); _s('menuInitial',init);
+  _s('settingsEmail',email||name);
 
-  // Avatar photos
+  // ② Avatar photo — with crossorigin + referrerpolicy for Google's CDN
   if(googleUser.picture){
-    const pic = googleUser.picture.replace(/=s\d+/,'=s96');
-    ['chipAvatarImg','menuAvatarImg'].forEach((id,idx)=>{
-      const img = document.getElementById(id);
-      const initId = idx===0?'chipInitial':'menuInitial';
-      const initEl = document.getElementById(initId);
+    const pic = googleUser.picture.replace(/=s\d+-c$/,'=s96-c').replace(/=s\d+$/,'=s96');
+    ['chipAvatarImg','menuAvatarImg'].forEach((id,i)=>{
+      const img   = document.getElementById(id);
+      const iInit = document.getElementById(i===0?'chipInitial':'menuInitial');
       if(!img) return;
-      img.onerror=()=>{ img.style.display='none'; if(initEl) initEl.style.display=''; };
-      img.onload =()=>{ img.style.display='block'; if(initEl) initEl.style.display='none'; };
-      img.src = pic;
+      img.setAttribute('referrerpolicy','no-referrer');
+      img.setAttribute('crossorigin','anonymous');
+      img.onerror = ()=>{ img.style.display='none'; if(iInit) iInit.style.display=''; };
+      img.onload  = ()=>{ img.style.display='block'; if(iInit) iInit.style.display='none'; };
+      if(img.src !== pic) img.src = pic;
     });
   }
 
-  // Settings panel
+  // ③ Settings panel
   const scs = document.getElementById('settingsCloudSection');
   const ssi = document.getElementById('settingsSignedIn');
   if(scs) scs.style.display='none';
   if(ssi) ssi.style.display='block';
-  setTxt('settingsEmail', email||name);
 }
 
-function googleSignOut(){
-  if(driveToken&&typeof google!=='undefined') google.accounts.oauth2.revoke(driveToken,()=>{});
-  driveToken=null; googleUser=null; driveFileId=null;
-  S.googleUser=null;
-  clearTokenSession();
-  localStorage.removeItem('sav_guser');
+function _showLoginWall(){
+  const lw = document.getElementById('loginWall');
+  if(lw) lw.style.display='flex';
+}
+function _hideLoginWall(){
+  const lw = document.getElementById('loginWall');
+  if(lw) lw.style.display='none';
+}
 
-  // Reset chip
-  const chip=document.getElementById('userChip'); if(chip) chip.classList.remove('visible');
-  const btn=document.getElementById('hdrSignInBtn'); if(btn) btn.style.display='';
+// ── Sign out ─────────────────────────────────────────────────
+function googleSignOut(){
+  if(driveToken && typeof google!=='undefined')
+    google.accounts.oauth2.revoke(driveToken,()=>{});
+  driveToken=null; googleUser=null; driveFileId=null;
+  _tokenClear(); _userClear();
+
+  const chip = document.getElementById('userChip');    if(chip) chip.classList.remove('visible');
+  const sbtn = document.getElementById('hdrSignInBtn'); if(sbtn) sbtn.style.display='';
   ['chipAvatarImg','menuAvatarImg'].forEach(id=>{ const el=document.getElementById(id); if(el){el.style.display='none';el.src='';} });
   ['chipInitial','menuInitial'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display=''; });
   const scs=document.getElementById('settingsCloudSection'); if(scs) scs.style.display='block';
-  const ssi=document.getElementById('settingsSignedIn'); if(ssi) ssi.style.display='none';
+  const ssi=document.getElementById('settingsSignedIn');     if(ssi) ssi.style.display='none';
 
-  setSyncStatus('');
-  saveState(); // save without user
-  showLoginWall();
+  _setSyncStatus('');
+  // Save local state without user reference
+  S.googleUser=null;
+  localStorage.setItem('savings_app_v3',JSON.stringify(S));
+  _showLoginWall();
 }
 
+// ── User menu ────────────────────────────────────────────────
 function toggleUserMenu(){
   const m=document.getElementById('userMenu');
+  if(!m) return;
   if(m.classList.contains('open')){ closeUserMenu(); return; }
   const chip=document.getElementById('userChip');
+  if(!chip) return;
   const r=chip.getBoundingClientRect();
-  m.style.top=(r.bottom+6)+'px';
+  m.style.top =(r.bottom+6)+'px';
   m.style.right=(window.innerWidth-r.right)+'px';
   m.classList.add('open');
 }
-function closeUserMenu(){ document.getElementById('userMenu').classList.remove('open'); }
+function closeUserMenu(){ const m=document.getElementById('userMenu'); if(m) m.classList.remove('open'); }
 document.addEventListener('click',e=>{
   const m=document.getElementById('userMenu'), chip=document.getElementById('userChip');
   if(m&&!m.contains(e.target)&&chip&&!chip.contains(e.target)) closeUserMenu();
-  document.getElementById('calPopup').style.display='none';
+  const cp=document.getElementById('calPopup'); if(cp) cp.style.display='none';
 });
 
 // ════════════════════════════════════════════════════════════
-// DRIVE SYNC — appDataFolder (private, no file picker)
-// Debounced 3s after every saveState() call
+// DRIVE SYNC
+// Auto-saves 2s after every saveState() call.
+// Uses drive.file scope — stores savings_budget.json in Drive root.
 // ════════════════════════════════════════════════════════════
 function scheduleDriveSync(){
   if(!driveToken) return;
   clearTimeout(driveSaveTimer);
-  driveSaveTimer = setTimeout(()=>saveToDrive(true), 3000);
+  driveSaveTimer = setTimeout(()=>_saveDrive(), 2000);
 }
 
-function setSyncStatus(msg,err){
-  const els=[document.getElementById('syncStatusEl'),document.getElementById('menuSyncStatus')];
-  els.forEach(el=>{ if(el){ el.textContent=msg; el.style.color=err?'var(--red)':'var(--text3)'; } });
+function _setSyncStatus(msg,err){
+  ['syncStatusEl','menuSyncStatus'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){ el.textContent=msg; el.style.color=err?'var(--red)':'var(--text3)'; }
+  });
 }
-function setLoginStatus(msg){ const el=document.getElementById('loginStatus'); if(el) el.textContent=msg; }
 
-// Find existing file in appDataFolder
-async function findDriveFile(){
+// Find the Drive file ID (cached after first lookup)
+async function _findFile(){
   if(driveFileId) return driveFileId;
   try{
-    const r=await fetch(`https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name%3D%22${DRIVE_FILE}%22`,
-      {headers:{Authorization:'Bearer '+driveToken}});
-    const d=await r.json();
-    driveFileId = d.files&&d.files.length ? d.files[0].id : null;
+    const r = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=name%3D%22${DRIVE_FILE}%22%20and%20trashed%3Dfalse&spaces=drive&fields=files(id)`,
+      {headers:{Authorization:'Bearer '+driveToken}}
+    );
+    const d = await r.json();
+    driveFileId = (d.files&&d.files[0]) ? d.files[0].id : null;
   }catch(e){ driveFileId=null; }
   return driveFileId;
 }
 
-async function saveToDrive(silent=false){
-  if(!driveToken) return; // no token — don't loop
-  if(!silent) setSyncStatus('Saving…');
+async function _saveDrive(){
+  if(!driveToken || _syncing) return;
+  _syncing = true;
   try{
-    const body=JSON.stringify(S,null,2);
-    const fid=await findDriveFile();
+    const body = JSON.stringify(S, null, 2);
+    const fid  = await _findFile();
     if(fid){
+      // Update existing file content only (fast PATCH)
       await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fid}?uploadType=media`,{
         method:'PATCH',
         headers:{Authorization:'Bearer '+driveToken,'Content-Type':'application/json'},
         body
       });
     } else {
-      // Create in appDataFolder
-      const meta={name:DRIVE_FILE,parents:['appDataFolder'],mimeType:'application/json'};
-      const form=new FormData();
-      form.append('metadata',new Blob([JSON.stringify(meta)],{type:'application/json'}));
-      form.append('file',new Blob([body],{type:'application/json'}));
-      const res=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{
-        method:'POST',headers:{Authorization:'Bearer '+driveToken},body:form
-      }).then(r=>r.json());
-      driveFileId=res.id||null;
+      // Create new file in Drive root
+      const meta = {name:DRIVE_FILE, mimeType:'application/json'};
+      const form = new FormData();
+      form.append('metadata', new Blob([JSON.stringify(meta)],{type:'application/json'}));
+      form.append('file',     new Blob([body],{type:'application/json'}));
+      const res = await fetch(
+        'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+        {method:'POST', headers:{Authorization:'Bearer '+driveToken}, body:form}
+      ).then(r=>r.json());
+      driveFileId = res.id || null;
     }
-    setSyncStatus('✓ Synced '+new Date().toLocaleTimeString());
-  }catch(err){ setSyncStatus('✗ '+err.message,true); }
+    _setSyncStatus('✓ Synced ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}));
+  }catch(err){
+    _setSyncStatus('✗ '+err.message, true);
+  }finally{
+    _syncing = false;
+  }
 }
 
-async function loadFromDrive(silent=false){
-  if(!driveToken) return; // no token — never loop
-  if(!silent) setSyncStatus('Loading…');
+// Load Drive data — never calls saveState, never loops
+async function _loadDrive(silent){
+  if(!driveToken) return;
+  if(!silent) _setSyncStatus('Loading…');
   try{
-    const fid=await findDriveFile();
+    const fid = await _findFile();
     if(!fid){
-      if(!silent) setSyncStatus('No data in Drive yet — will save on first change.');
+      _setSyncStatus(silent ? '' : 'No file found — will create on first save.');
       return;
     }
-    const r=await fetch(`https://www.googleapis.com/drive/v3/files/${fid}?alt=media`,
+    const r    = await fetch(`https://www.googleapis.com/drive/v3/files/${fid}?alt=media`,
       {headers:{Authorization:'Bearer '+driveToken}});
-    const data=await r.json();
-    if(data&&typeof data==='object'&&!data.error){
-      // Merge Drive data without triggering another Drive save
-      S={...DEF,...data};
-      localStorage.setItem('savings_app_v3',JSON.stringify(S));
-      renderAllViews(); // render without calling saveState (avoids recursive sync)
-      setSyncStatus('✓ Loaded '+new Date().toLocaleTimeString());
+    const data = await r.json();
+    if(data && typeof data==='object' && !data.error){
+      S = {...DEF, ...data};
+      // Write to localStorage without triggering Drive sync
+      localStorage.setItem('savings_app_v3', JSON.stringify(S));
+      // Re-render everything
+      recalcRollover();
+      renderDashboard();
+      renderBills();
+      renderSavingsView();
+      renderTracker();
+      loadSettingsUI();
+      _applyUserUI();
+      _setSyncStatus('✓ Loaded ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}));
     }
-  }catch(err){ if(!silent) setSyncStatus('✗ '+err.message,true); }
+  }catch(err){
+    if(!silent) _setSyncStatus('✗ '+err.message, true);
+  }
 }
 
-// Render all views without saving (used after Drive load to avoid save loop)
-function renderAllViews(){
-  recalcRollover();
-  renderDashboard();
-  renderBills();
-  renderSavingsView();
-  renderTracker();
-  loadSettingsUI();
-  updateSignedInUI();
-}
+// Public wrappers used by settings buttons
+function saveToDrive(){ _saveDrive(); }
+function loadFromDrive(s){ return _loadDrive(s||false); }
 
 // ════════════════════════════════════════════════════════════
 // PULL-TO-REFRESH (mobile)
 // ════════════════════════════════════════════════════════════
-(function setupPullToRefresh(){
+(function(){
   const content = document.getElementById('mainContent');
   if(!content) return;
-  let startY=0, pulling=false, indicator=null;
+  let startY=0, pulling=false, ind=null;
 
-  function createIndicator(){
-    if(indicator) return;
-    indicator=document.createElement('div');
-    indicator.style.cssText='position:fixed;top:60px;left:50%;transform:translateX(-50%);background:var(--bg2);border:1px solid var(--border2);border-radius:20px;padding:6px 16px;font-family:var(--mono);font-size:12px;color:var(--text3);z-index:999;opacity:0;transition:opacity .2s;pointer-events:none;';
-    indicator.textContent='↓ Pull to refresh';
-    document.body.appendChild(indicator);
+  function mkInd(){
+    if(ind) return;
+    ind = document.createElement('div');
+    ind.style.cssText = 'position:fixed;top:62px;left:50%;transform:translateX(-50%) translateX(0);background:var(--bg2);border:1px solid var(--border2);border-radius:20px;padding:6px 18px;font-family:var(--mono);font-size:12px;color:var(--text3);z-index:9999;opacity:0;transition:opacity .18s;pointer-events:none;white-space:nowrap;';
+    document.body.appendChild(ind);
   }
 
-  content.addEventListener('touchstart',e=>{
+  content.addEventListener('touchstart', e=>{
     if(content.scrollTop!==0) return;
-    startY=e.touches[0].clientY;
-    pulling=true;
-    createIndicator();
-  },{passive:true});
+    startY   = e.touches[0].clientY;
+    pulling  = true;
+    mkInd();
+  }, {passive:true});
 
-  content.addEventListener('touchmove',e=>{
-    if(!pulling) return;
-    const dy=e.touches[0].clientY-startY;
-    if(dy>10&&indicator){
-      indicator.style.opacity='1';
-      indicator.textContent=dy>60?'↑ Release to refresh':'↓ Pull to refresh';
-    }
-  },{passive:true});
+  content.addEventListener('touchmove', e=>{
+    if(!pulling||!ind) return;
+    const dy = e.touches[0].clientY - startY;
+    if(dy>8){ ind.style.opacity='1'; ind.textContent = dy>64 ? '↑ Release to sync' : '↓ Pull to sync'; }
+  }, {passive:true});
 
-  content.addEventListener('touchend',e=>{
+  content.addEventListener('touchend', e=>{
     if(!pulling) return;
     pulling=false;
-    const dy=e.changedTouches[0].clientY-startY;
-    if(indicator) indicator.style.opacity='0';
-    if(dy>60){
-      if(indicator) indicator.textContent='Refreshing…';
-      if(indicator) indicator.style.opacity='1';
-      loadFromDrive(true).then(()=>{
-        if(indicator){ indicator.style.opacity='0'; }
-      });
+    const dy = e.changedTouches[0].clientY - startY;
+    if(ind) ind.style.opacity='0';
+    if(dy>64){
+      if(ind){ ind.style.opacity='1'; ind.textContent='Syncing…'; }
+      _loadDrive(true).then(()=>{ if(ind) ind.style.opacity='0'; });
     }
     startY=0;
-  },{passive:true});
+  }, {passive:true});
 })();
 
-// Calendar nav
+// ════════════════════════════════════════════════════════════
+// NAVIGATION, KEYBOARD, MISC
+// ════════════════════════════════════════════════════════════
 document.getElementById('calPrev').onclick=()=>{ calDate.setMonth(calDate.getMonth()-1); renderCalendar(); };
 document.getElementById('calNext').onclick=()=>{ calDate.setMonth(calDate.getMonth()+1); renderCalendar(); };
+document.getElementById('loginGoogleBtn').onclick = requestGoogleSignIn;
+document.getElementById('hdrSignInBtn').onclick   = requestGoogleSignIn;
 
-// ════════════════════════════════════════════════════════════
-// LOGIN WALL BUTTONS
-// ════════════════════════════════════════════════════════════
-document.getElementById('loginGoogleBtn').onclick=requestGoogleSignIn;
-document.getElementById('hdrSignInBtn').onclick=requestGoogleSignIn;
-
-// ════════════════════════════════════════════════════════════
-// KEYBOARD
-// ════════════════════════════════════════════════════════════
 document.addEventListener('keydown',e=>{
   if(e.key==='n'&&e.target.tagName!=='INPUT'&&e.target.tagName!=='TEXTAREA'&&e.target.tagName!=='SELECT') openTxModal();
   if(e.key==='Escape'){ closeTxModal(); closeIncModal(); closeUserMenu(); }
 });
-document.getElementById('txModal').addEventListener('click',function(e){ if(e.target===this) closeTxModal(); });
-document.getElementById('incModal').addEventListener('click',function(e){ if(e.target===this) closeIncModal(); });
+document.getElementById('txModal').addEventListener('click', function(e){ if(e.target===this) closeTxModal(); });
+document.getElementById('incModal').addEventListener('click', function(e){ if(e.target===this) closeIncModal(); });
 
 // ════════════════════════════════════════════════════════════
-// INIT — load local state, boot UI, then authenticate
+// INIT
 // ════════════════════════════════════════════════════════════
 function initUI(){
   recalcRollover();
@@ -2178,15 +2206,14 @@ function initUI(){
   renderSavingsView();
   renderTracker();
   loadSettingsUI();
-  calDate=new Date();
+  calDate = new Date();
 }
 
 loadState();
 initUI();
 
-// Kick off Google auth after DOM is fully ready
-// This never blocks the UI — app shows local data instantly
-window.addEventListener('load', ()=>{ initGSI(); });
+// Start Google auth after DOM ready — never blocks UI
+window.addEventListener('load', initGSI);
 </script>
 </body>
 </html>
