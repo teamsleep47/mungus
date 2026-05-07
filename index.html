@@ -1913,10 +1913,18 @@ function setSyncStatus(status, msg) {
 // ── Main init (called on page load) ──────────────────────────
 function initGoogleSignin() {
   if (typeof google === 'undefined') { setTimeout(initGoogleSignin, 500); return; }
+  // Debug: log cached user so we can verify name is stored
+  const _dbg = localStorage.getItem('sav_guser');
+  if (_dbg) { try { const _u=JSON.parse(_dbg); console.log('[Savings] Cached user:', _u.name, _u.email); } catch(e){} }
 
   const savedUser = localStorage.getItem('sav_guser');
   if (!savedUser) { showLoginWall(); return; }
   try { gUser = JSON.parse(savedUser); } catch(e) {}
+  // If stored name is empty or 'User', clear it so we re-fetch properly on next login
+  if (gUser && (!gUser.name || gUser.name === 'User')) {
+    gUser.name = gUser.email || 'User'; // use email as display name until re-fetched
+    localStorage.setItem('sav_guser', JSON.stringify(gUser));
+  }
 
   // Fresh session token — use immediately, zero popup
   const cachedToken = loadTokenFromSession();
@@ -1930,11 +1938,12 @@ function initGoogleSignin() {
       .then(r => { if (!r.ok) return null; return r.json(); })
       .then(u => {
         if (u && u.email) {
-          gUser = { name: u.name||gUser.name||'', email: u.email, picture: u.picture||gUser.picture||'' };
+          const fullName = u.name || (u.given_name&&u.family_name ? u.given_name+' '+u.family_name : u.given_name) || gUser.name || u.email;
+          gUser = { name: fullName, email: u.email, picture: u.picture||gUser.picture||'' };
           localStorage.setItem('sav_guser', JSON.stringify(gUser));
-          renderUserChip(); // refresh chip with latest info
+          renderUserChip();
         }
-        // If null (401 etc), gUser from localStorage is already showing — no action needed
+        // 401 = token expired but cached name/picture still shows fine
       }).catch(()=>{});
     loadFromDrive();
     scheduleTokenRefresh();
@@ -1985,7 +1994,8 @@ function runTokenClient() {
           try {
             const u = await fetch('https://www.googleapis.com/oauth2/v3/userinfo',
               { headers: { Authorization: 'Bearer ' + resp.access_token } }).then(r => r.json());
-            gUser = { name: u.name, email: u.email, picture: u.picture };
+            const fullName = u.name || (u.given_name && u.family_name ? u.given_name+' '+u.family_name : u.given_name) || u.email || 'User';
+            gUser = { name: fullName, email: u.email||'', picture: u.picture||'' };
             localStorage.setItem('sav_guser', JSON.stringify(gUser));
           } catch(e) {
             const saved = localStorage.getItem('sav_guser');
@@ -2026,7 +2036,8 @@ async function trySilentAuth() {
             try {
               const u = await fetch('https://www.googleapis.com/oauth2/v3/userinfo',
                 { headers: { Authorization: 'Bearer ' + resp.access_token } }).then(r => r.json());
-              gUser = { name: u.name, email: u.email, picture: u.picture };
+              const fullName = u.name || (u.given_name && u.family_name ? u.given_name+' '+u.family_name : u.given_name) || u.email || 'User';
+              gUser = { name: fullName, email: u.email||'', picture: u.picture||'' };
               localStorage.setItem('sav_guser', JSON.stringify(gUser));
             } catch(e) {
               const saved = localStorage.getItem('sav_guser');
