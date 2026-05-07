@@ -1928,25 +1928,38 @@ function initGoogleSignin() {
 
   // Fresh session token — use immediately, zero popup
   const cachedToken = loadTokenFromSession();
-  if (cachedToken) {
+  const nameIsBad = !gUser.name || gUser.name === 'User' || gUser.name === '';
+  if (cachedToken && !nameIsBad) {
+    // Token valid AND name is real — use everything from cache instantly
     gDriveToken = cachedToken;
-    // gUser is already loaded from localStorage above — render it immediately
-    // Then try to refresh userinfo in background (silently ignore 401)
-    unlockApp(); // shows chip with cached name/picture right away
-    fetch('https://www.googleapis.com/oauth2/v3/userinfo',
-      { headers: { Authorization: 'Bearer ' + cachedToken } })
-      .then(r => { if (!r.ok) return null; return r.json(); })
-      .then(u => {
-        if (u && u.email) {
-          const fullName = u.name || (u.given_name&&u.family_name ? u.given_name+' '+u.family_name : u.given_name) || gUser.name || u.email;
-          gUser = { name: fullName, email: u.email, picture: u.picture||gUser.picture||'' };
-          localStorage.setItem('sav_guser', JSON.stringify(gUser));
-          renderUserChip();
-        }
-        // 401 = token expired but cached name/picture still shows fine
-      }).catch(()=>{});
+    unlockApp();
     loadFromDrive();
     scheduleTokenRefresh();
+    return;
+  }
+  if (cachedToken && nameIsBad) {
+    // Token valid but name is bad — fetch fresh userinfo before showing chip
+    gDriveToken = cachedToken;
+    fetch('https://www.googleapis.com/oauth2/v3/userinfo',
+      { headers: { Authorization: 'Bearer ' + cachedToken } })
+      .then(r => r.ok ? r.json() : null)
+      .then(u => {
+        if (u && u.email) {
+          const fullName = u.name || u.given_name && u.family_name
+            ? (u.given_name||'') + ' ' + (u.family_name||'')
+            : u.given_name || u.email;
+          gUser = { name: fullName.trim()||u.email, email: u.email, picture: u.picture||'' };
+          localStorage.setItem('sav_guser', JSON.stringify(gUser));
+          console.log('[Savings] Name refreshed:', gUser.name);
+        }
+        unlockApp();
+        loadFromDrive();
+        scheduleTokenRefresh();
+      })
+      .catch(() => {
+        // userinfo failed — fall through to silent re-auth to get fresh token + name
+        trySilentAuth().then(ok => { if (!ok) showLoginWall(); });
+      });
     return;
   }
 
@@ -1995,10 +2008,10 @@ function runTokenClient() {
           try {
             const u = await fetch('https://www.googleapis.com/oauth2/v3/userinfo',
               { headers: { Authorization: 'Bearer ' + resp.access_token } }).then(r => r.json());
-            const fullName = u.name || (u.given_name && u.family_name ? u.given_name+' '+u.family_name : u.given_name) || u.email || 'User';
-            gUser = { name: fullName, email: u.email||'', picture: u.picture||'' };
+            const fn = u.name || (u.given_name ? (u.given_name+' '+(u.family_name||'')).trim() : '') || u.email || '';
+            gUser = { name: fn, email: u.email||'', picture: u.picture||'' };
             localStorage.setItem('sav_guser', JSON.stringify(gUser));
-            console.log('[Savings] User saved:', gUser.name, gUser.email);
+            console.log('[Savings] User saved:', fn, u.email);
           } catch(e) {
             console.log('[Savings] userinfo fetch failed:', e);
             const saved = localStorage.getItem('sav_guser');
@@ -2039,9 +2052,10 @@ async function trySilentAuth() {
             try {
               const u = await fetch('https://www.googleapis.com/oauth2/v3/userinfo',
                 { headers: { Authorization: 'Bearer ' + resp.access_token } }).then(r => r.json());
-              const fullName = u.name || (u.given_name && u.family_name ? u.given_name+' '+u.family_name : u.given_name) || u.email || 'User';
-              gUser = { name: fullName, email: u.email||'', picture: u.picture||'' };
+              const fn = u.name || (u.given_name ? (u.given_name+' '+(u.family_name||'')).trim() : '') || u.email || '';
+              gUser = { name: fn, email: u.email||'', picture: u.picture||'' };
               localStorage.setItem('sav_guser', JSON.stringify(gUser));
+              console.log('[Savings] trySilentAuth name:', fn);
             } catch(e) {
               const saved = localStorage.getItem('sav_guser');
               if (saved) try { gUser = JSON.parse(saved); } catch(e2) {}
@@ -2069,7 +2083,7 @@ function unlockApp() {
 
 function renderUserChip() {
   if (!gUser) return;
-  const name  = gUser.name  || 'User';
+  const name  = (gUser.name && gUser.name !== 'User') ? gUser.name : (gUser.email || 'User');
   const email = gUser.email || '';
   const init  = name.charAt(0).toUpperCase();
 
