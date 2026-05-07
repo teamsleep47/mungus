@@ -1975,6 +1975,7 @@ function doSignIn() {
 }
 
 function runTokenClient() {
+  console.log('[Savings] runTokenClient called');
   const st = document.getElementById('loginStatus');
   if (st) st.textContent = 'Connecting…';
   const savedUser = localStorage.getItem('sav_guser');
@@ -1997,7 +1998,9 @@ function runTokenClient() {
             const fullName = u.name || (u.given_name && u.family_name ? u.given_name+' '+u.family_name : u.given_name) || u.email || 'User';
             gUser = { name: fullName, email: u.email||'', picture: u.picture||'' };
             localStorage.setItem('sav_guser', JSON.stringify(gUser));
+            console.log('[Savings] User saved:', gUser.name, gUser.email);
           } catch(e) {
+            console.log('[Savings] userinfo fetch failed:', e);
             const saved = localStorage.getItem('sav_guser');
             if (saved) try { gUser = JSON.parse(saved); } catch(e2) {}
           }
