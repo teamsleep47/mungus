@@ -530,18 +530,9 @@ select option{background:var(--bg3);}
       <div class="login-icon">◈</div>
 
       <!-- Headline -->
-      <div>
-        <div class="login-headline">Know where your money goes.</div>
-        <div class="login-sub">Savings is a personal finance cockpit built for real daily use. Set your income, lock in your bills, protect your savings — then spend what's actually left, not what feels left.</div>
-      </div>
-
-      <!-- Feature pills -->
-      <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">
-        <span style="padding:4px 12px;background:var(--gdim);color:var(--green);border-radius:20px;font-family:var(--mono);font-size:11px;border:1px solid var(--green2);">Daily allowance</span>
-        <span style="padding:4px 12px;background:var(--gdim);color:var(--green);border-radius:20px;font-family:var(--mono);font-size:11px;border:1px solid var(--green2);">Rollover tracking</span>
-        <span style="padding:4px 12px;background:var(--gdim);color:var(--green);border-radius:20px;font-family:var(--mono);font-size:11px;border:1px solid var(--green2);">Bill calendar</span>
-        <span style="padding:4px 12px;background:var(--gdim);color:var(--green);border-radius:20px;font-family:var(--mono);font-size:11px;border:1px solid var(--green2);">Cash flow forecast</span>
-        <span style="padding:4px 12px;background:var(--gdim);color:var(--green);border-radius:20px;font-family:var(--mono);font-size:11px;border:1px solid var(--green2);">Syncs across devices</span>
+      <div style="text-align:center;">
+        <div class="login-headline">Savings</div>
+        <div class="login-sub">Your personal finance cockpit.</div>
       </div>
 
       <!-- Sign in button -->
@@ -1957,6 +1948,301 @@ function renderAllPanels() {
   renderTracker();
   loadSettingsUI();
   renderUserChip();
+}
+
+// ════════════════════════════════════════════════════════════
+// GOOGLE DRIVE SYNC
+// ════════════════════════════════════════════════════════════
+const CLIENT_ID = '558206043149-gv95cmiitlpse6mtnc0ts8pd3dct1aob.apps.googleusercontent.com';
+const SCOPES    = 'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email';
+const FILE_NAME = 'savings_data.json';
+
+let gDriveToken  = null;
+let gDriveFileId = null;
+let gUser        = null;
+let syncTimeout  = null;
+
+function saveTokenToSession(t){
+  sessionStorage.setItem('sav_access_token',t);
+  sessionStorage.setItem('sav_token_ts',Date.now()+'');
+}
+function loadTokenFromSession(){
+  const t=sessionStorage.getItem('sav_access_token');
+  const ts=parseInt(sessionStorage.getItem('sav_token_ts')||'0');
+  if(t&&(Date.now()-ts)<55*60*1000) return t;
+  return null;
+}
+function clearSessionToken(){
+  sessionStorage.removeItem('sav_access_token');
+  sessionStorage.removeItem('sav_token_ts');
+}
+
+function setSyncStatus(status,msg){
+  const strip=document.getElementById('syncStrip');
+  const dot=document.getElementById('syncDot');
+  const label=document.getElementById('syncStripMsg');
+  if(strip&&dot&&label){
+    if(!msg){strip.style.display='none';return;}
+    strip.style.display='flex';
+    dot.style.background=status==='synced'?'var(--green)':status==='syncing'?'var(--yellow)':status==='error'?'var(--red)':'var(--text3)';
+    label.style.color=dot.style.background;
+    label.textContent=msg;
+    clearTimeout(strip._t);
+    if(status==='synced') strip._t=setTimeout(()=>{strip.style.display='none';},5000);
+  }
+  ['syncStatusEl','menuSyncStatus'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){el.textContent=msg;el.style.color=status==='error'?'var(--red)':'var(--text3)';}
+  });
+}
+
+function initGoogleSignin(){
+  if(typeof google==='undefined'){setTimeout(initGoogleSignin,500);return;}
+  // Clean up bad cached name
+  const _dbg=localStorage.getItem('sav_guser');
+  if(_dbg){
+    try{
+      const _u=JSON.parse(_dbg);
+      console.log('[Savings] Cached user:',_u.name,_u.email);
+      if(!_u.name||_u.name==='User'||_u.name===''){
+        localStorage.removeItem('sav_guser');
+        console.log('[Savings] Bad cached name cleared');
+      }
+    }catch(e){localStorage.removeItem('sav_guser');}
+  }
+  const savedUser=localStorage.getItem('sav_guser');
+  if(!savedUser){showLoginWall();return;}
+  try{gUser=JSON.parse(savedUser);}catch(e){}
+  if(gUser&&(!gUser.name||gUser.name==='User'||gUser.name==='')){
+    gUser.name=gUser.email||'User';
+    localStorage.setItem('sav_guser',JSON.stringify(gUser));
+  }
+  const cachedToken=loadTokenFromSession();
+  if(cachedToken){
+    gDriveToken=cachedToken;
+    unlockApp();
+    loadFromDrive();
+    scheduleTokenRefresh();
+    return;
+  }
+  trySilentAuth().then(ok=>{if(!ok)showLoginWall();});
+}
+
+function scheduleTokenRefresh(){
+  const ts=parseInt(sessionStorage.getItem('sav_token_ts')||'0');
+  const age=Date.now()-ts;
+  const wait=Math.max(30000,50*60*1000-age);
+  setTimeout(()=>trySilentAuth(),wait);
+}
+
+function showLoginWall(){
+  const lw=document.getElementById('loginWall');
+  if(lw)lw.style.display='flex';
+}
+
+function doSignIn(){runTokenClient();}
+
+function runTokenClient(){
+  const st=document.getElementById('loginStatus');
+  if(st)st.textContent='Connecting…';
+  const savedUser=localStorage.getItem('sav_guser');
+  const hasUser=!!savedUser;
+  let loginHint='';
+  if(savedUser){try{loginHint=JSON.parse(savedUser).email||'';}catch(e){}}
+  try{
+    const tc=google.accounts.oauth2.initTokenClient({
+      client_id:CLIENT_ID,scope:SCOPES,
+      callback:async resp=>{
+        if(resp.access_token){
+          gDriveToken=resp.access_token;
+          saveTokenToSession(resp.access_token);
+          try{
+            const u=await fetch('https://www.googleapis.com/oauth2/v3/userinfo',
+              {headers:{Authorization:'Bearer '+resp.access_token}}).then(r=>r.json());
+            const fn=u.name||(u.given_name?(u.given_name+' '+(u.family_name||'')).trim():'')||u.email||'';
+            gUser={name:fn,email:u.email||'',picture:u.picture||''};
+            localStorage.setItem('sav_guser',JSON.stringify(gUser));
+            console.log('[Savings] Signed in:',fn,u.email);
+          }catch(e){
+            const s=localStorage.getItem('sav_guser');
+            if(s)try{gUser=JSON.parse(s);}catch(e2){}
+          }
+          if(st)st.textContent='';
+          unlockApp();
+          await loadFromDrive();
+          scheduleTokenRefresh();
+        }else{
+          if(st)st.textContent='Sign-in failed — try again.';
+        }
+      }
+    });
+    tc.requestAccessToken({prompt:hasUser?'':'select_account',login_hint:loginHint});
+  }catch(e){if(st)st.textContent='Error: '+e.message;}
+}
+
+async function trySilentAuth(){
+  return new Promise(resolve=>{
+    if(typeof google==='undefined'){resolve(false);return;}
+    try{
+      const tc=google.accounts.oauth2.initTokenClient({
+        client_id:CLIENT_ID,scope:SCOPES,prompt:'',
+        callback:async resp=>{
+          if(resp.access_token){
+            gDriveToken=resp.access_token;
+            saveTokenToSession(resp.access_token);
+            try{
+              const u=await fetch('https://www.googleapis.com/oauth2/v3/userinfo',
+                {headers:{Authorization:'Bearer '+resp.access_token}}).then(r=>r.json());
+              const fn=u.name||(u.given_name?(u.given_name+' '+(u.family_name||'')).trim():'')||u.email||'';
+              gUser={name:fn,email:u.email||'',picture:u.picture||''};
+              localStorage.setItem('sav_guser',JSON.stringify(gUser));
+              console.log('[Savings] trySilentAuth name:',fn);
+            }catch(e){
+              const s=localStorage.getItem('sav_guser');
+              if(s)try{gUser=JSON.parse(s);}catch(e2){}
+            }
+            unlockApp();
+            loadFromDrive();
+            scheduleTokenRefresh();
+            resolve(true);
+          }else{resolve(false);}
+        }
+      });
+      tc.requestAccessToken({prompt:''});
+    }catch(e){resolve(false);}
+  });
+}
+
+function unlockApp(){
+  const lw=document.getElementById('loginWall');
+  if(lw)lw.style.display='none';
+  renderUserChip();
+}
+
+function renderUserChip(){
+  if(!gUser)return;
+  const name=(gUser.name&&gUser.name!=='User')?gUser.name:(gUser.email||'User');
+  const email=gUser.email||'';
+  const init=name.charAt(0).toUpperCase();
+  const chip=document.getElementById('userChip');
+  const sigBtn=document.getElementById('hdrSignInBtn');
+  if(chip)chip.classList.add('visible');
+  if(sigBtn)sigBtn.style.display='none';
+  const _s=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  _s('chipName',name);_s('chipEmail',email);_s('chipInitial',init);
+  _s('menuName',name);_s('menuEmail',email);_s('menuInitial',init);
+  _s('settingsEmail',email||name);
+  if(gUser.picture){
+    const pic=gUser.picture.replace(/=s\d+-c$/,'=s96-c').replace(/=s\d+$/,'=s96');
+    ['chipAvatarImg','menuAvatarImg'].forEach((id,i)=>{
+      const img=document.getElementById(id);
+      const initEl=document.getElementById(i===0?'chipInitial':'menuInitial');
+      if(!img)return;
+      img.setAttribute('referrerpolicy','no-referrer');
+      img.setAttribute('crossorigin','anonymous');
+      img.onerror=()=>{img.style.display='none';if(initEl)initEl.style.display='';};
+      img.onload=()=>{img.style.display='block';if(initEl)initEl.style.display='none';};
+      if(img.src!==pic)img.src=pic;
+    });
+  }
+  const scs=document.getElementById('settingsCloudSection');
+  const ssi=document.getElementById('settingsSignedIn');
+  if(scs)scs.style.display='none';
+  if(ssi)ssi.style.display='block';
+}
+
+function googleSignOut(){
+  if(gDriveToken&&typeof google!=='undefined')google.accounts.oauth2.revoke(gDriveToken,()=>{});
+  gDriveToken=null;gUser=null;gDriveFileId=null;
+  clearSessionToken();localStorage.removeItem('sav_guser');
+  const chip=document.getElementById('userChip');if(chip)chip.classList.remove('visible');
+  const sb=document.getElementById('hdrSignInBtn');if(sb)sb.style.display='';
+  ['chipAvatarImg','menuAvatarImg'].forEach(id=>{const el=document.getElementById(id);if(el){el.style.display='none';el.src='';}});
+  ['chipInitial','menuInitial'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='';});
+  const scs=document.getElementById('settingsCloudSection');if(scs)scs.style.display='block';
+  const ssi=document.getElementById('settingsSignedIn');if(ssi)ssi.style.display='none';
+  setSyncStatus('','');
+  localStorage.setItem('savings_app_v3',JSON.stringify(S));
+  showLoginWall();
+}
+
+function toggleUserMenu(){
+  const m=document.getElementById('userMenu');
+  if(!m)return;
+  if(m.classList.contains('open')){closeUserMenu();return;}
+  const chip=document.getElementById('userChip');
+  if(!chip)return;
+  const r=chip.getBoundingClientRect();
+  m.style.top=(r.bottom+6)+'px';
+  m.style.right=(window.innerWidth-r.right)+'px';
+  m.classList.add('open');
+}
+function closeUserMenu(){const m=document.getElementById('userMenu');if(m)m.classList.remove('open');}
+document.addEventListener('click',e=>{
+  const m=document.getElementById('userMenu'),chip=document.getElementById('userChip');
+  if(m&&!m.contains(e.target)&&chip&&!chip.contains(e.target))closeUserMenu();
+  const cp=document.getElementById('calPopup');if(cp)cp.style.display='none';
+});
+
+async function findDriveFile(){
+  if(gDriveFileId)return gDriveFileId;
+  try{
+    const r=await fetch(
+      'https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name%3D%22'+FILE_NAME+'%22&fields=files(id)',
+      {headers:{Authorization:'Bearer '+gDriveToken}});
+    const d=await r.json();
+    gDriveFileId=(d.files&&d.files[0])?d.files[0].id:null;
+  }catch(e){gDriveFileId=null;}
+  return gDriveFileId;
+}
+
+async function loadFromDrive(){
+  if(!gDriveToken)return;
+  setSyncStatus('syncing','Syncing…');
+  try{
+    const fid=await findDriveFile();
+    if(fid){
+      const r=await fetch('https://www.googleapis.com/drive/v3/files/'+fid+'?alt=media',
+        {headers:{Authorization:'Bearer '+gDriveToken}});
+      const data=await r.json();
+      if(data&&typeof data==='object'&&!data.error){
+        Object.assign(S,data);
+        localStorage.setItem('savings_app_v3',JSON.stringify(S));
+        setSyncStatus('synced','✓ Synced '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));
+        recalcRollover();renderDashboard();renderBills();renderSavingsView();renderTracker();loadSettingsUI();renderUserChip();
+      }
+    }else{
+      setSyncStatus('syncing','First sync — uploading…');
+      await saveToDrive();
+    }
+  }catch(e){setSyncStatus('error','✗ '+e.message);}
+}
+
+async function saveToDrive(){
+  if(!gDriveToken)return;
+  setSyncStatus('syncing','Saving…');
+  try{
+    const body=JSON.stringify(S);
+    const fid=await findDriveFile();
+    if(fid){
+      await fetch('https://www.googleapis.com/upload/drive/v3/files/'+fid+'?uploadType=media',
+        {method:'PATCH',headers:{Authorization:'Bearer '+gDriveToken,'Content-Type':'application/json'},body});
+    }else{
+      const meta={name:FILE_NAME,parents:['appDataFolder']};
+      const form=new FormData();
+      form.append('metadata',new Blob([JSON.stringify(meta)],{type:'application/json'}));
+      form.append('file',new Blob([body],{type:'application/json'}));
+      const res=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+        {method:'POST',headers:{Authorization:'Bearer '+gDriveToken},body:form}).then(r=>r.json());
+      gDriveFileId=res.id;
+    }
+    setSyncStatus('synced','✓ Synced '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));
+  }catch(e){setSyncStatus('error','✗ Save failed: '+e.message);}
+}
+
+function debouncedSave(){
+  clearTimeout(syncTimeout);
+  syncTimeout=setTimeout(saveToDrive,1500);
 }
 
 // Manual force buttons in Settings
