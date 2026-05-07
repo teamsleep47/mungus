@@ -546,8 +546,7 @@ select option{background:var(--bg3);}
     <div style="overflow:hidden;"><div class="menu-name" id="menuName"></div><div class="menu-email" id="menuEmail"></div></div>
   </div>
   <div class="menu-items">
-    <div class="menu-item" onclick="saveToDrive();closeUserMenu();">⟳&nbsp; Save to Drive</div>
-    <div class="menu-item" onclick="loadFromDrive();closeUserMenu();">↓&nbsp; Load from Drive</div>
+    <div class="menu-item" style="color:var(--text3);cursor:default;font-size:12px;">✓ Auto-syncing to Drive</div>
     <div class="menu-item" onclick="navTo('settings');closeUserMenu();">⚙&nbsp; Settings</div>
     <hr class="menu-sep">
     <div class="menu-item danger" onclick="googleSignOut();closeUserMenu();">↩&nbsp; Sign out</div>
@@ -888,14 +887,14 @@ select option{background:var(--bg3);}
           <div id="settingsSignedIn" style="display:none;">
             <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--gdim);border:1px solid var(--green2);border-radius:var(--radius);margin-bottom:12px;">
               <span style="color:var(--green);font-size:18px;">✓</span>
-              <div><div style="font-family:var(--mono);font-size:12px;color:var(--green);" id="settingsEmail">Signed in</div><div style="font-size:11px;color:var(--text3);">Auto-saving to Google Drive</div></div>
+              <div><div style="font-family:var(--mono);font-size:12px;color:var(--green);" id="settingsEmail">Signed in</div><div style="font-size:11px;color:var(--text3);">Syncing automatically across all your devices</div></div>
               <button class="btn btn-sm" style="margin-left:auto;" onclick="googleSignOut()">Sign out</button>
             </div>
-            <div style="display:flex;gap:8px;">
-              <button class="btn btn-green" onclick="saveToDrive()">⟳ Save Now</button>
-              <button class="btn" onclick="loadFromDrive()">↓ Load from Drive</button>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <div style="font-size:12px;color:var(--text3);">Data syncs automatically every time you make a change.</div>
             </div>
             <div id="syncStatusEl" style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-top:8px;min-height:16px;"></div>
+          <div style="font-size:11px;color:var(--text3);margin-top:6px;">Pull down on mobile to force a sync.</div>
           </div>
         </div>
         <div class="card">
@@ -1804,8 +1803,8 @@ function renderView(v){
 // ─ Auto-load from Drive on every sign-in
 // ════════════════════════════════════════════════════════════
 const GCLIENT_ID  = '558206043149-gv95cmiitlpse6mtnc0ts8pd3dct1aob.apps.googleusercontent.com';
-const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
-const DRIVE_FILE  = 'savings_budget.json';
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+const DRIVE_FILE  = 'savings_data.json';
 
 let googleUser     = null;
 let driveToken     = null;
@@ -2062,7 +2061,7 @@ async function _findFile(){
   if(driveFileId) return driveFileId;
   try{
     const r = await fetch(
-      `https://www.googleapis.com/drive/v3/files?q=name%3D%22${DRIVE_FILE}%22%20and%20trashed%3Dfalse&spaces=drive&fields=files(id)`,
+      `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name%3D%22${DRIVE_FILE}%22&fields=files(id)`,
       {headers:{Authorization:'Bearer '+driveToken}}
     );
     const d = await r.json();
@@ -2085,8 +2084,8 @@ async function _saveDrive(){
         body
       });
     } else {
-      // Create new file in Drive root
-      const meta = {name:DRIVE_FILE, mimeType:'application/json'};
+      // Create new file in appDataFolder (private to this app)
+      const meta = {name:DRIVE_FILE, mimeType:'application/json', parents:['appDataFolder']};
       const form = new FormData();
       form.append('metadata', new Blob([JSON.stringify(meta)],{type:'application/json'}));
       form.append('file',     new Blob([body],{type:'application/json'}));
