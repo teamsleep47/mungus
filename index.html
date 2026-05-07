@@ -633,6 +633,12 @@ select option{background:var(--bg3);}
     </div>
   </header>
 
+  <!-- Sync indicator strip -->
+  <div id="syncStrip" style="display:none;height:28px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;align-items:center;justify-content:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--text3);">
+    <span id="syncDot" style="width:6px;height:6px;border-radius:50%;background:var(--text3);flex-shrink:0;display:inline-block;"></span>
+    <span id="syncStripMsg">Connecting…</span>
+  </div>
+
   <div class="body">
     <!-- Sidebar -->
     <nav class="sidebar">
@@ -1818,9 +1824,27 @@ let _syncing       = false; // guard against concurrent saves
 // ── Token cache in sessionStorage ───────────────────────────
 // Survives page refresh within the same browser session.
 // Cleared automatically when the tab/browser is closed.
-function _tokenSave(t){ try{ sessionStorage.setItem('sav_tk',t); sessionStorage.setItem('sav_tk_ts',Date.now()+''); }catch(e){} }
-function _tokenLoad(){ try{ const t=sessionStorage.getItem('sav_tk'),ts=+sessionStorage.getItem('sav_tk_ts')||0; if(t&&Date.now()-ts<54e5) return t; }catch(e){} return null; }
-function _tokenClear(){ try{ sessionStorage.removeItem('sav_tk'); sessionStorage.removeItem('sav_tk_ts'); }catch(e){} }
+// Token stored in BOTH sessionStorage (fast) and localStorage (persistent across tabs/refreshes)
+// localStorage token valid 55 min from issue — same as Google's expiry
+function _tokenSave(t){
+  const ts = Date.now()+'';
+  try{ sessionStorage.setItem('sav_tk',t); sessionStorage.setItem('sav_tk_ts',ts); }catch(e){}
+  try{ localStorage.setItem('sav_tk',t);   localStorage.setItem('sav_tk_ts',ts);   }catch(e){}
+}
+function _tokenLoad(){
+  // Try sessionStorage first (fastest), then localStorage
+  try{
+    let t=sessionStorage.getItem('sav_tk'), ts=+sessionStorage.getItem('sav_tk_ts')||0;
+    if(t && Date.now()-ts < 54*60*1000) return t;
+    t=localStorage.getItem('sav_tk'); ts=+localStorage.getItem('sav_tk_ts')||0;
+    if(t && Date.now()-ts < 54*60*1000) return t;
+  }catch(e){}
+  return null;
+}
+function _tokenClear(){
+  try{ sessionStorage.removeItem('sav_tk'); sessionStorage.removeItem('sav_tk_ts'); }catch(e){}
+  try{ localStorage.removeItem('sav_tk');   localStorage.removeItem('sav_tk_ts');   }catch(e){}
+}
 
 // ── User cache in localStorage ───────────────────────────────
 function _userSave(u){ try{ localStorage.setItem('sav_usr',JSON.stringify(u)); }catch(e){} }
@@ -1853,6 +1877,8 @@ function initGSI(){
     driveToken  = cachedToken;
     _applyUserUI();
     _hideLoginWall();
+    // Show sync strip briefly while loading
+    _setSyncStatus('Syncing with Drive…');
     // Load Drive data quietly, then push local data if Drive is empty
     _loadDrive(true).then(()=>_initialSync());
     // Schedule a token refresh before the 55-min mark
@@ -2054,10 +2080,34 @@ function scheduleDriveSync(){
 }
 
 function _setSyncStatus(msg,err){
+  // Update settings + menu text
   ['syncStatusEl','menuSyncStatus'].forEach(id=>{
     const el=document.getElementById(id);
     if(el){ el.textContent=msg; el.style.color=err?'var(--red)':'var(--text3)'; }
   });
+  // Update the header sync strip
+  const strip = document.getElementById('syncStrip');
+  const dot   = document.getElementById('syncDot');
+  const label = document.getElementById('syncStripMsg');
+  if(!strip||!dot||!label) return;
+  if(!msg){ strip.style.display='none'; return; }
+  strip.style.display='flex';
+  if(err){
+    dot.style.background='var(--red)';
+    label.style.color='var(--red)';
+  } else if(msg.startsWith('✓')){
+    dot.style.background='var(--green)';
+    label.style.color='var(--green)';
+    // Auto-hide after 6 seconds once synced
+    clearTimeout(strip._hideTimer);
+    strip._hideTimer=setTimeout(()=>{ strip.style.display='none'; },6000);
+  } else {
+    // Syncing in progress
+    dot.style.background='var(--yellow)';
+    label.style.color='var(--yellow)';
+    clearTimeout(strip._hideTimer);
+  }
+  label.textContent=msg;
 }
 
 // Find the Drive file ID (cached after first lookup)
