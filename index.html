@@ -1922,17 +1922,20 @@ function initGoogleSignin() {
   const cachedToken = loadTokenFromSession();
   if (cachedToken) {
     gDriveToken = cachedToken;
-    // Refresh user info in background so name/picture are always current
+    // gUser is already loaded from localStorage above — render it immediately
+    // Then try to refresh userinfo in background (silently ignore 401)
+    unlockApp(); // shows chip with cached name/picture right away
     fetch('https://www.googleapis.com/oauth2/v3/userinfo',
       { headers: { Authorization: 'Bearer ' + cachedToken } })
-      .then(r => r.json()).then(u => {
+      .then(r => { if (!r.ok) return null; return r.json(); })
+      .then(u => {
         if (u && u.email) {
           gUser = { name: u.name||gUser.name||'', email: u.email, picture: u.picture||gUser.picture||'' };
           localStorage.setItem('sav_guser', JSON.stringify(gUser));
-          renderUserChip(); // re-render with fresh name/picture
+          renderUserChip(); // refresh chip with latest info
         }
+        // If null (401 etc), gUser from localStorage is already showing — no action needed
       }).catch(()=>{});
-    unlockApp();
     loadFromDrive();
     scheduleTokenRefresh();
     return;
