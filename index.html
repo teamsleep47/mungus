@@ -163,7 +163,7 @@ body{
 .tab-item.active{color:var(--green);}
 .tab-item:active{opacity:.7;}
 .tab-ico{width:22px;height:22px;flex-shrink:0;display:block;}
-.tab-lbl{font-size:9px;font-family:var(--mono);letter-spacing:.03em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+.tab-lbl{font-size:8px;font-family:var(--mono);letter-spacing:.02em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
 
 /* ─── CARDS ──────────────────────────────────────────── */
 .card{
@@ -694,7 +694,7 @@ select option{background:var(--bg3);}
         <div class="two-col">
           <div class="card">
             <div class="card-hdr">
-              <div class="card-title">Upcoming Bills</div>
+              <div class="card-title">Bills This Month</div>
               <span class="badge y" id="upcomingCount">0 bills</span>
             </div>
             <div id="upcomingList"></div>
@@ -844,7 +844,7 @@ select option{background:var(--bg3);}
         </div>
         <div class="card">
           <div class="card-hdr"><div class="card-title">Safety Buffer</div></div>
-          <div class="card-sub">If your spending balance drops below this, you'll see a warning.</div>
+          <div class="card-sub">Your minimum safe balance. If rollover + remaining daily allowance drops below this number, a warning appears on the dashboard. Example: buffer = $100, you have $80 left → red alert. It never locks spending — it just flags when you're close to $0 so you can act before it's too late.</div>
           <div class="form-row">
             <div class="fg"><label>Minimum Buffer ($)</label><input type="number" id="bufferVal" placeholder="100" step="1" min="0" onchange="saveSettings()" onfocus="this.select()"></div>
             <div class="fg" style="flex:0;min-width:70px;"><label>&nbsp;</label><button class="btn btn-green" onclick="saveSettings()">Save</button></div>
@@ -927,12 +927,16 @@ select option{background:var(--bg3);}
         <svg class="tab-ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
         <div class="tab-lbl">Home</div>
       </div>
+      <div class="tab-item" data-view="income">
+        <svg class="tab-ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        <div class="tab-lbl">Income</div>
+      </div>
       <div class="tab-item" data-view="calendar">
         <svg class="tab-ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         <div class="tab-lbl">Bills</div>
       </div>
       <div class="tab-item" data-view="tracker">
-        <svg class="tab-ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        <svg class="tab-ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
         <div class="tab-lbl">Track</div>
       </div>
       <div class="tab-item" data-view="forecast">
@@ -1271,17 +1275,60 @@ function renderTodayPanel(){
 }
 
 function renderUpcomingShort(){
-  const soon=S.bills.map(b=>({bill:b,date:billNextDue(b),days:daysUntil(billNextDue(b))}))
-    .filter(x=>x.days<=7).sort((a,b)=>a.days-b.days);
-  document.getElementById('upcomingCount').textContent=`${soon.length} bill${soon.length!==1?'s':''}`;
+  // Show ALL bills for the current month, sorted by due date
+  const now = new Date();
+  const y   = now.getFullYear();
+  const m   = now.getMonth();
+  const dim = new Date(y, m+1, 0).getDate();
+
+  // Get every occurrence of every bill this month
+  const monthBills = [];
+  S.bills.forEach(b=>{
+    if(b.frequency==='monthly'){
+      const day = Math.min(b.due, dim);
+      const date = new Date(y, m, day);
+      monthBills.push({bill:b, date, days:daysUntil(date)});
+    } else if(b.frequency==='weekly'){
+      for(let d=1;d<=dim;d++){
+        const date=new Date(y,m,d);
+        if(date.getDay()===b.due) monthBills.push({bill:b,date:new Date(date),days:daysUntil(date)});
+      }
+    } else if(b.frequency==='yearly'){
+      if((b.month||0)===m){
+        const day=Math.min(b.due,dim);
+        const date=new Date(y,m,day);
+        monthBills.push({bill:b,date,days:daysUntil(date)});
+      }
+    }
+  });
+  monthBills.sort((a,b)=>a.date-b.date);
+
+  const overdue = monthBills.filter(x=>x.days<0).length;
+  const upcoming7 = monthBills.filter(x=>x.days>=0&&x.days<=7).length;
+  const countLabel = monthBills.length===0 ? 'No bills' :
+    `${monthBills.length} bill${monthBills.length!==1?'s':''}${overdue?` · ${overdue} overdue`:''}`;
+  document.getElementById('upcomingCount').textContent=countLabel;
+  document.getElementById('upcomingCount').className='badge '+(overdue?'r':upcoming7?'y':'g');
+
   const el=document.getElementById('upcomingList');
-  if(!soon.length){ el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:4px 0;">No bills due in the next 7 days.</div>'; return; }
-  el.innerHTML=soon.map(x=>{
-    const c=x.days<=0?'r':x.days<=3?'y':'g';
-    const lbl=x.days===0?'Today':x.days<0?`${Math.abs(x.days)}d overdue`:`in ${x.days}d`;
-    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);">
-      <div><div style="font-size:13px;">${x.bill.name}</div><div style="font-size:11px;color:var(--text3);">${x.bill.category||''}</div></div>
-      <div style="text-align:right;"><div style="font-family:var(--mono);font-size:13px;">${fmt(x.bill.amount)}</div><span class="badge ${c}">${lbl}</span></div>
+  if(!monthBills.length){
+    el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:4px 0;">No bills this month.</div>';
+    return;
+  }
+  el.innerHTML=monthBills.map(x=>{
+    const dateStr=`${y}-${String(m+1).padStart(2,'0')}-${String(x.date.getDate()).padStart(2,'0')}`;
+    const paid=isBillPaid(x.bill,dateStr);
+    const col=paid?'g':x.days<0?'r':x.days<=7?'y':'muted';
+    const lbl=paid?'Paid':x.days===0?'Today':x.days<0?`${Math.abs(x.days)}d overdue`:`${x.days}d`;
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);${paid?'opacity:.5':''}">
+      <div>
+        <div style="font-size:13px;${paid?'text-decoration:line-through;':''}">${x.bill.name}</div>
+        <div style="font-size:11px;color:var(--text3);">${x.bill.category||''} · ${x.date.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-family:var(--mono);font-size:13px;">${fmt(x.bill.amount)}</div>
+        <span class="badge ${col}">${lbl}</span>
+      </div>
     </div>`;
   }).join('');
 }
@@ -1875,6 +1922,16 @@ function initGoogleSignin() {
   const cachedToken = loadTokenFromSession();
   if (cachedToken) {
     gDriveToken = cachedToken;
+    // Refresh user info in background so name/picture are always current
+    fetch('https://www.googleapis.com/oauth2/v3/userinfo',
+      { headers: { Authorization: 'Bearer ' + cachedToken } })
+      .then(r => r.json()).then(u => {
+        if (u && u.email) {
+          gUser = { name: u.name||gUser.name||'', email: u.email, picture: u.picture||gUser.picture||'' };
+          localStorage.setItem('sav_guser', JSON.stringify(gUser));
+          renderUserChip(); // re-render with fresh name/picture
+        }
+      }).catch(()=>{});
     unlockApp();
     loadFromDrive();
     scheduleTokenRefresh();
@@ -1908,7 +1965,12 @@ function doSignIn() {
 function runTokenClient() {
   const st = document.getElementById('loginStatus');
   if (st) st.textContent = 'Connecting…';
-  const hasUser = !!localStorage.getItem('sav_guser');
+  const savedUser = localStorage.getItem('sav_guser');
+  const hasUser   = !!savedUser;
+  // If we know the user's email, pass it as login_hint so Google
+  // skips the account picker entirely and goes straight to consent/auth
+  let loginHint = '';
+  if (savedUser) { try { loginHint = JSON.parse(savedUser).email||''; } catch(e){} }
   try {
     const tokenClient = google.accounts.oauth2.initTokenClient({
       client_id: CLIENT_ID,
@@ -1935,7 +1997,12 @@ function runTokenClient() {
         }
       }
     });
-    tokenClient.requestAccessToken({ prompt: hasUser ? '' : 'select_account' });
+    // Returning user: prompt '' + login_hint = no account picker, no "unverified" screen
+    // First-time user: 'select_account' = shows picker once for consent
+    tokenClient.requestAccessToken({
+      prompt: hasUser ? '' : 'select_account',
+      login_hint: loginHint
+    });
   } catch(e) {
     if (st) st.textContent = 'Error: ' + e.message;
   }
