@@ -976,7 +976,7 @@ function loadState(){
 }
 function saveState(){
   localStorage.setItem('savings_app_v3', JSON.stringify(S));
-  debouncedSave(); // 1500ms debounce then save to Drive
+  debouncedSave();
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1804,7 +1804,7 @@ function renderView(v){
 }
 
 // ════════════════════════════════════════════════════════════
-// GOOGLE DRIVE SYNC — copied from SCF planner (proven working)
+// GOOGLE DRIVE SYNC — exact SCF planner pattern
 // ════════════════════════════════════════════════════════════
 const CLIENT_ID = '558206043149-gv95cmiitlpse6mtnc0ts8pd3dct1aob.apps.googleusercontent.com';
 const SCOPES    = 'https://www.googleapis.com/auth/drive.appdata';
@@ -1815,56 +1815,46 @@ let gDriveFileId = null;
 let gUser        = null;
 let syncTimeout  = null;
 
-// ── Token cache — sessionStorage (fast) + localStorage (persistent) ──
+// ── Token cache — sessionStorage only (same as SCF planner) ──
+// trySilentAuth() re-acquires silently from Google cookie on every load
 function saveTokenToSession(token) {
-  const ts = Date.now().toString();
   sessionStorage.setItem('sav_access_token', token);
-  sessionStorage.setItem('sav_token_ts', ts);
-  // Also persist to localStorage so it survives browser close
-  localStorage.setItem('sav_access_token', token);
-  localStorage.setItem('sav_token_ts', ts);
+  sessionStorage.setItem('sav_token_ts', Date.now().toString());
 }
 function loadTokenFromSession() {
-  // Try sessionStorage first, then localStorage
-  let token = sessionStorage.getItem('sav_access_token');
-  let ts    = parseInt(sessionStorage.getItem('sav_token_ts') || '0');
-  if (!token || Date.now() - ts >= 55 * 60 * 1000) {
-    token = localStorage.getItem('sav_access_token');
-    ts    = parseInt(localStorage.getItem('sav_token_ts') || '0');
-  }
+  const token = sessionStorage.getItem('sav_access_token');
+  const ts    = parseInt(sessionStorage.getItem('sav_token_ts') || '0');
   if (token && (Date.now() - ts) < 55 * 60 * 1000) return token;
   return null;
 }
 function clearSessionToken() {
   sessionStorage.removeItem('sav_access_token');
   sessionStorage.removeItem('sav_token_ts');
-  localStorage.removeItem('sav_access_token');
-  localStorage.removeItem('sav_token_ts');
 }
 
-// ── Sync status UI ───────────────────────────────────────────
+// ── Sync status ───────────────────────────────────────────────
 function setSyncStatus(status, msg) {
-  // Strip indicator
   const strip = document.getElementById('syncStrip');
   const dot   = document.getElementById('syncDot');
   const label = document.getElementById('syncStripMsg');
   if (strip && dot && label) {
     if (!msg) { strip.style.display = 'none'; return; }
     strip.style.display = 'flex';
-    dot.style.background   = status==='synced' ? 'var(--green)' : status==='syncing' ? 'var(--yellow)' : status==='error' ? 'var(--red)' : 'var(--text3)';
-    label.style.color      = status==='synced' ? 'var(--green)' : status==='syncing' ? 'var(--yellow)' : status==='error' ? 'var(--red)' : 'var(--text3)';
-    label.textContent      = msg;
+    dot.style.background = status==='synced'  ? 'var(--green)'  :
+                           status==='syncing' ? 'var(--yellow)' :
+                           status==='error'   ? 'var(--red)'    : 'var(--text3)';
+    label.style.color    = dot.style.background;
+    label.textContent    = msg;
     clearTimeout(strip._t);
-    if (status === 'synced') strip._t = setTimeout(() => { strip.style.display='none'; }, 6000);
+    if (status === 'synced') strip._t = setTimeout(() => { strip.style.display='none'; }, 5000);
   }
-  // Settings + menu text
   ['syncStatusEl','menuSyncStatus'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.textContent = msg; el.style.color = status==='error' ? 'var(--red)' : 'var(--text3)'; }
   });
 }
 
-// ── Main init ────────────────────────────────────────────────
+// ── Main init (called on page load) ──────────────────────────
 function initGoogleSignin() {
   if (typeof google === 'undefined') { setTimeout(initGoogleSignin, 500); return; }
 
@@ -1872,7 +1862,7 @@ function initGoogleSignin() {
   if (!savedUser) { showLoginWall(); return; }
   try { gUser = JSON.parse(savedUser); } catch(e) {}
 
-  // 1. Fresh cached token — use immediately, zero network calls
+  // Fresh session token — use immediately, zero popup
   const cachedToken = loadTokenFromSession();
   if (cachedToken) {
     gDriveToken = cachedToken;
@@ -1882,17 +1872,16 @@ function initGoogleSignin() {
     return;
   }
 
-  // 2. Know the user but token expired — try silent OAuth
+  // Token expired — try silent re-auth (works if Google cookie still active)
   trySilentAuth().then(ok => {
     if (!ok) showLoginWall();
   });
 }
 
-// Proactively refresh token before it expires
 function scheduleTokenRefresh() {
-  const ts = parseInt(localStorage.getItem('sav_token_ts') || '0');
+  const ts = parseInt(sessionStorage.getItem('sav_token_ts') || '0');
   const age = Date.now() - ts;
-  const refreshIn = Math.max(30000, (50 * 60 * 1000) - age);
+  const refreshIn = Math.max(0, (50 * 60 * 1000) - age);
   setTimeout(() => { trySilentAuth(); }, refreshIn);
 }
 
@@ -1901,7 +1890,7 @@ function showLoginWall() {
   if (lw) lw.style.display = 'flex';
 }
 
-// Called when user clicks sign-in button
+// ── Sign-in button handler ────────────────────────────────────
 function doSignIn() {
   if (typeof google === 'undefined') { setTimeout(doSignIn, 200); return; }
   runTokenClient();
@@ -1909,7 +1898,7 @@ function doSignIn() {
 
 function runTokenClient() {
   const st = document.getElementById('loginStatus');
-  if (st) st.textContent = 'Connecting to Google…';
+  if (st) st.textContent = 'Connecting…';
   const hasUser = !!localStorage.getItem('sav_guser');
   try {
     const tokenClient = google.accounts.oauth2.initTokenClient({
@@ -1919,12 +1908,10 @@ function runTokenClient() {
         if (resp.access_token) {
           gDriveToken = resp.access_token;
           saveTokenToSession(resp.access_token);
-          // Get user info
           try {
-            const uRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo',
-              { headers: { Authorization: 'Bearer ' + resp.access_token } });
-            const uData = await uRes.json();
-            gUser = { name: uData.name, email: uData.email, picture: uData.picture };
+            const u = await fetch('https://www.googleapis.com/oauth2/v3/userinfo',
+              { headers: { Authorization: 'Bearer ' + resp.access_token } }).then(r => r.json());
+            gUser = { name: u.name, email: u.email, picture: u.picture };
             localStorage.setItem('sav_guser', JSON.stringify(gUser));
           } catch(e) {
             const saved = localStorage.getItem('sav_guser');
@@ -1957,12 +1944,10 @@ async function trySilentAuth() {
           if (resp.access_token) {
             gDriveToken = resp.access_token;
             saveTokenToSession(resp.access_token);
-            // Refresh user info silently
             try {
-              const uRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo',
-                { headers: { Authorization: 'Bearer ' + resp.access_token } });
-              const uData = await uRes.json();
-              gUser = { name: uData.name, email: uData.email, picture: uData.picture };
+              const u = await fetch('https://www.googleapis.com/oauth2/v3/userinfo',
+                { headers: { Authorization: 'Bearer ' + resp.access_token } }).then(r => r.json());
+              gUser = { name: u.name, email: u.email, picture: u.picture };
               localStorage.setItem('sav_guser', JSON.stringify(gUser));
             } catch(e) {
               const saved = localStorage.getItem('sav_guser');
@@ -1982,7 +1967,7 @@ async function trySilentAuth() {
   });
 }
 
-// ── App unlock — hide login wall, show user chip ─────────────
+// ── Unlock app ────────────────────────────────────────────────
 function unlockApp() {
   const lw = document.getElementById('loginWall');
   if (lw) lw.style.display = 'none';
@@ -1995,40 +1980,37 @@ function renderUserChip() {
   const email = gUser.email || '';
   const init  = name.charAt(0).toUpperCase();
 
-  // Header chip
   const chip   = document.getElementById('userChip');
   const sigBtn = document.getElementById('hdrSignInBtn');
   if (chip)   chip.classList.add('visible');
   if (sigBtn) sigBtn.style.display = 'none';
 
-  const _s = (id, v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
-  _s('chipName', name);  _s('chipEmail', email); _s('chipInitial', init);
-  _s('menuName', name);  _s('menuEmail', email);  _s('menuInitial', init);
+  const _s = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  _s('chipName', name); _s('chipEmail', email); _s('chipInitial', init);
+  _s('menuName', name); _s('menuEmail', email);  _s('menuInitial', init);
   _s('settingsEmail', email || name);
 
-  // Avatar photo
   if (gUser.picture) {
     const pic = gUser.picture.replace(/=s\d+-c$/, '=s96-c').replace(/=s\d+$/, '=s96');
     ['chipAvatarImg','menuAvatarImg'].forEach((id, i) => {
       const img    = document.getElementById(id);
-      const initEl = document.getElementById(i===0 ? 'chipInitial' : 'menuInitial');
+      const initEl = document.getElementById(i === 0 ? 'chipInitial' : 'menuInitial');
       if (!img) return;
       img.setAttribute('referrerpolicy', 'no-referrer');
-      img.setAttribute('crossorigin',    'anonymous');
-      img.onerror = () => { img.style.display='none'; if(initEl) initEl.style.display=''; };
-      img.onload  = () => { img.style.display='block'; if(initEl) initEl.style.display='none'; };
+      img.setAttribute('crossorigin', 'anonymous');
+      img.onerror = () => { img.style.display='none'; if (initEl) initEl.style.display=''; };
+      img.onload  = () => { img.style.display='block'; if (initEl) initEl.style.display='none'; };
       if (img.src !== pic) img.src = pic;
     });
   }
 
-  // Settings panel
   const scs = document.getElementById('settingsCloudSection');
   const ssi = document.getElementById('settingsSignedIn');
   if (scs) scs.style.display = 'none';
   if (ssi) ssi.style.display = 'block';
 }
 
-// ── Sign out ─────────────────────────────────────────────────
+// ── Sign out ──────────────────────────────────────────────────
 function googleSignOut() {
   if (gDriveToken && typeof google !== 'undefined')
     google.accounts.oauth2.revoke(gDriveToken, () => {});
@@ -2075,10 +2057,10 @@ document.addEventListener('click', e => {
 });
 
 // ════════════════════════════════════════════════════════════
-// DRIVE — appDataFolder (private, cross-device, no UI clutter)
-// Drive is ALWAYS the source of truth.
-// Saves debounced 1500ms after every change.
-// Loads on every sign-in and every page load with valid token.
+// DRIVE OPERATIONS
+// Drive is ALWAYS source of truth.
+// loadFromDrive — never calls saveState, never triggers debouncedSave
+// saveToDrive   — only called from debouncedSave or forceUploadToDrive
 // ════════════════════════════════════════════════════════════
 async function findDriveFile() {
   const res = await fetch(
@@ -2101,26 +2083,21 @@ async function loadFromDrive() {
       );
       const data = await res.json();
       if (data && typeof data === 'object' && !data.error) {
-        S = { ...DEF, ...data };
-        // Write to localStorage WITHOUT calling saveState (no sync loop)
+        // EXACT SCF pattern: Object.assign — never spread DEF over Drive data
+        Object.assign(S, data);
+        // Write to localStorage WITHOUT calling saveState (no sync loop, no overwrite)
         localStorage.setItem('savings_app_v3', JSON.stringify(S));
-        // Re-render all views
-        recalcRollover();
-        renderDashboard();
-        renderBills();
-        renderSavingsView();
-        renderTracker();
-        loadSettingsUI();
-        renderUserChip();
         setSyncStatus('synced', '✓ Synced ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}));
+        // Re-render — these functions must NOT call saveState
+        renderAllPanels();
       }
     } else {
-      // No file in Drive yet — this device has the only copy, push it up
+      // No Drive file yet — push local data up once
       setSyncStatus('syncing', 'First sync — uploading…');
       await saveToDrive();
     }
   } catch(e) {
-    setSyncStatus('error', '✗ Sync error — ' + e.message);
+    setSyncStatus('error', '✗ ' + e.message);
   }
 }
 
@@ -2148,7 +2125,7 @@ async function saveToDrive() {
     }
     setSyncStatus('synced', '✓ Synced ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}));
   } catch(e) {
-    setSyncStatus('error', '✗ Save failed — ' + e.message);
+    setSyncStatus('error', '✗ Save failed: ' + e.message);
   }
 }
 
@@ -2157,10 +2134,21 @@ function debouncedSave() {
   syncTimeout = setTimeout(saveToDrive, 1500);
 }
 
-// ── Manual force buttons (Settings page) ─────────────────────
+// renderAllPanels — re-renders everything WITHOUT calling saveState
+function renderAllPanels() {
+  recalcRollover();        // recalcs rollover field in S but does NOT call saveState
+  renderDashboard();
+  renderBills();
+  renderSavingsView();
+  renderTracker();
+  loadSettingsUI();
+  renderUserChip();
+}
+
+// Manual force buttons in Settings
 async function forceUploadToDrive() {
   if (!gDriveToken) { alert('Not signed in.'); return; }
-  gDriveFileId = null; // clear cache so we re-check
+  gDriveFileId = null;
   await saveToDrive();
 }
 async function forcePullFromDrive() {
@@ -2169,14 +2157,11 @@ async function forcePullFromDrive() {
   await loadFromDrive();
 }
 
-// ════════════════════════════════════════════════════════════
-// PULL-TO-REFRESH (mobile)
-// ════════════════════════════════════════════════════════════
+// ── Pull-to-refresh (mobile) ──────────────────────────────────
 (function() {
   const content = document.getElementById('mainContent');
   if (!content) return;
   let startY = 0, pulling = false, ind = null;
-
   function mkInd() {
     if (ind) return;
     ind = document.createElement('div');
@@ -2199,16 +2184,14 @@ async function forcePullFromDrive() {
     if (ind) ind.style.opacity = '0';
     if (dy > 64) {
       if (ind) { ind.style.opacity='1'; ind.textContent='Syncing…'; }
-      gDriveFileId = null; // force re-fetch latest
+      gDriveFileId = null;
       loadFromDrive().then(() => { if (ind) ind.style.opacity='0'; });
     }
     startY = 0;
   }, { passive: true });
 })();
 
-// ════════════════════════════════════════════════════════════
-// NAVIGATION, KEYBOARD, MISC
-// ════════════════════════════════════════════════════════════
+// ── Wiring ────────────────────────────────────────────────────
 document.getElementById('calPrev').onclick = () => { calDate.setMonth(calDate.getMonth()-1); renderCalendar(); };
 document.getElementById('calNext').onclick = () => { calDate.setMonth(calDate.getMonth()+1); renderCalendar(); };
 document.getElementById('loginGoogleBtn').onclick = doSignIn;
@@ -2218,12 +2201,10 @@ document.addEventListener('keydown', e => {
   if (e.key==='n' && e.target.tagName!=='INPUT' && e.target.tagName!=='TEXTAREA' && e.target.tagName!=='SELECT') openTxModal();
   if (e.key==='Escape') { closeTxModal(); closeIncModal(); closeUserMenu(); }
 });
-document.getElementById('txModal').addEventListener('click',  function(e) { if(e.target===this) closeTxModal(); });
-document.getElementById('incModal').addEventListener('click', function(e) { if(e.target===this) closeIncModal(); });
+document.getElementById('txModal').addEventListener('click',  function(e) { if (e.target===this) closeTxModal(); });
+document.getElementById('incModal').addEventListener('click', function(e) { if (e.target===this) closeIncModal(); });
 
-// ════════════════════════════════════════════════════════════
-// INIT — load local state first (instant), then authenticate
-// ════════════════════════════════════════════════════════════
+// ── Init ──────────────────────────────────────────────────────
 function initUI() {
   recalcRollover();
   renderDashboard();
@@ -2234,13 +2215,9 @@ function initUI() {
   calDate = new Date();
 }
 
-// Also wire saveState to call debouncedSave instead of scheduleDriveSync
-// (saveState already calls scheduleDriveSync — we replace that below)
-
 loadState();
 initUI();
 
-// Start Google auth after DOM is ready
 window.addEventListener('load', initGoogleSignin);
 </script>
 </body>
