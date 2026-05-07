@@ -876,8 +876,10 @@ select option{background:var(--bg3);}
       <div class="view" id="view-settings">
         <div class="card">
           <div class="card-hdr"><div class="card-title">General</div></div>
-          <div class="form-row" style="margin-bottom:14px;">
-            <div class="fg"><label>Rollover Balance ($)</label><input type="number" id="set_rollover" step="0.01" onchange="saveRollover()" onfocus="this.select()"></div>
+          <div style="padding:12px;background:var(--bg3);border-radius:var(--radius);margin-bottom:14px;">
+            <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:6px;">ROLLOVER BALANCE</div>
+            <div style="font-family:var(--mono);font-size:20px;font-weight:700;" id="set_rollover_display">$0.00</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:4px;">Auto-calculated from your transaction history. Syncs automatically.</div>
           </div>
           <button class="btn btn-green" onclick="saveSettings()">Save</button>
           <div style="margin-top:16px;"><button class="btn btn-red btn-sm" onclick="clearAll()">⚠ Clear All Data</button></div>
@@ -1693,7 +1695,9 @@ function recalcRollover(){
   let roll=0;
   Object.entries(groups).sort().forEach(([date,spent])=>{ if(date<today) roll+=daily-spent; });
   S.settings.rollover=parseFloat(roll.toFixed(2));
-  const el=document.getElementById('set_rollover'); if(el) el.value=S.settings.rollover.toFixed(2);
+  // Update display element in settings if visible
+  const rd=document.getElementById('set_rollover_display');
+  if(rd){ const r=S.settings.rollover; rd.textContent=(r>=0?'':'-')+'$'+Math.abs(r).toFixed(2); rd.style.color=r<0?'var(--red)':r===0?'var(--text2)':'var(--green)'; }
 }
 
 function renderTracker(){
@@ -1750,8 +1754,12 @@ function saveIncomeEntry(){
 // SETTINGS
 // ════════════════════════════════════════════════════════════
 function saveSettings(){ S.settings.minBuffer=parseFloat(document.getElementById('bufferVal').value)||100; saveState(); renderDashboard(); }
-function saveRollover(){ S.settings.rollover=parseFloat(document.getElementById('set_rollover').value)||0; saveState(); renderDashboard(); }
-function loadSettingsUI(){ document.getElementById('set_rollover').value=(S.settings.rollover||0).toFixed(2); document.getElementById('bufferVal').value=S.settings.minBuffer||100; }
+// saveRollover removed — rollover is always calculated from transactions
+function loadSettingsUI(){
+  const rd = document.getElementById('set_rollover_display');
+  if(rd){ const r=S.settings.rollover||0; rd.textContent=(r>=0?'':'-')+'$'+Math.abs(r).toFixed(2); rd.style.color=r<0?'var(--red)':r===0?'var(--text2)':'var(--green)'; }
+  const bv = document.getElementById('bufferVal'); if(bv) bv.value=S.settings.minBuffer||100;
+}
 function clearAll(){ if(!confirm('Clear ALL data? Cannot be undone.')) return; S=deepClone(DEF); saveState(); initUI(); }
 
 // ════════════════════════════════════════════════════════════
