@@ -1879,8 +1879,8 @@ function initGSI(){
     _hideLoginWall();
     // Show sync strip briefly while loading
     _setSyncStatus('Syncing with Drive…');
-    // Load Drive data quietly, then push local data if Drive is empty
-    _loadDrive(true).then(()=>_initialSync());
+    // Load from Drive — Drive is always source of truth on refresh
+    _loadDrive(true);
     // Schedule a token refresh before the 55-min mark
     _scheduleRefresh();
     return;
@@ -1908,7 +1908,7 @@ function _silentRefresh(loginHint, loadAfter){
         driveToken = resp.access_token;
         _tokenSave(resp.access_token);
         _fetchUserInfo(resp.access_token).then(()=>{
-          if(loadAfter) _loadDrive(true).then(()=>_initialSync());
+          if(loadAfter) _loadDrive(true); // Drive is always source of truth
           _scheduleRefresh();
         });
       } else {
@@ -1922,9 +1922,10 @@ function _silentRefresh(loginHint, loadAfter){
 
 // Schedule a background token refresh at the 50-min mark
 function _scheduleRefresh(){
-  const ts  = +sessionStorage.getItem('sav_tk_ts')||0;
+  // Read from localStorage so timestamp survives browser close/reopen
+  const ts  = +(localStorage.getItem('sav_tk_ts')||sessionStorage.getItem('sav_tk_ts')||0);
   const age = Date.now()-ts;
-  const wait = Math.max(10000, 50*60*1000 - age);
+  const wait = Math.max(30000, 50*60*1000 - age); // min 30s to avoid instant re-auth
   setTimeout(()=>{
     const hint = googleUser?.email||'';
     _silentRefresh(hint, false);
@@ -2189,18 +2190,20 @@ async function _loadDrive(silent){
   }
 }
 
-// Called right after sign-in — if Drive has no file yet but browser has data,
-// automatically push local data up so other devices can get it
+// Called ONLY on first-ever sign-in when Drive has no file yet.
+// NEVER called on subsequent loads — Drive is always the source of truth.
 async function _initialSync(){
   if(!driveToken) return;
   const fid = await _findFile();
-  if(!fid){
-    // No Drive file exists yet — push local data up automatically
-    const hasLocalData = S.transactions.length>0 || S.bills.length>0 || S.income.primary>0 || (S.income.log&&S.income.log.length>0);
-    if(hasLocalData){
-      _setSyncStatus('First sync — uploading your data…');
-      await _saveDrive();
-    }
+  if(fid) return; // Drive file exists — Drive is source of truth, never overwrite
+  // No Drive file at all — this is a brand new account
+  // Push whatever local data exists so Drive gets populated
+  const hasData = S.transactions.length>0 || S.bills.length>0 ||
+                  (S.income.primary||0)>0 || (S.income.log||[]).length>0 ||
+                  S.bills.length>0;
+  if(hasData){
+    _setSyncStatus('First time — uploading your data to Drive…');
+    await _saveDrive();
   }
 }
 
