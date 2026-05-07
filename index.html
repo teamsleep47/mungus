@@ -546,7 +546,8 @@ select option{background:var(--bg3);}
     <div style="overflow:hidden;"><div class="menu-name" id="menuName"></div><div class="menu-email" id="menuEmail"></div></div>
   </div>
   <div class="menu-items">
-    <div class="menu-item" style="color:var(--text3);cursor:default;font-size:12px;">✓ Auto-syncing to Drive</div>
+    <div class="menu-item" onclick="forceUploadToDrive();closeUserMenu();">↑&nbsp; Push to Drive</div>
+    <div class="menu-item" onclick="forcePullFromDrive();closeUserMenu();">↓&nbsp; Pull from Drive</div>
     <div class="menu-item" onclick="navTo('settings');closeUserMenu();">⚙&nbsp; Settings</div>
     <hr class="menu-sep">
     <div class="menu-item danger" onclick="googleSignOut();closeUserMenu();">↩&nbsp; Sign out</div>
@@ -890,9 +891,11 @@ select option{background:var(--bg3);}
               <div><div style="font-family:var(--mono);font-size:12px;color:var(--green);" id="settingsEmail">Signed in</div><div style="font-size:11px;color:var(--text3);">Syncing automatically across all your devices</div></div>
               <button class="btn btn-sm" style="margin-left:auto;" onclick="googleSignOut()">Sign out</button>
             </div>
-            <div style="display:flex;gap:8px;align-items:center;">
-              <div style="font-size:12px;color:var(--text3);">Data syncs automatically every time you make a change.</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+              <button class="btn btn-green btn-sm" onclick="forceUploadToDrive()">↑ Push My Data to Drive</button>
+              <button class="btn btn-sm" onclick="forcePullFromDrive()">↓ Pull from Drive</button>
             </div>
+            <div style="font-size:11px;color:var(--text3);">Use <strong>Push</strong> to upload your current data to Drive (first time setup, or to overwrite). Use <strong>Pull</strong> to load Drive data onto this device. After that, syncing is fully automatic.</div>
             <div id="syncStatusEl" style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-top:8px;min-height:16px;"></div>
           <div style="font-size:11px;color:var(--text3);margin-top:6px;">Pull down on mobile to force a sync.</div>
           </div>
@@ -1850,8 +1853,8 @@ function initGSI(){
     driveToken  = cachedToken;
     _applyUserUI();
     _hideLoginWall();
-    // Load Drive data quietly in the background
-    _loadDrive(true);
+    // Load Drive data quietly, then push local data if Drive is empty
+    _loadDrive(true).then(()=>_initialSync());
     // Schedule a token refresh before the 55-min mark
     _scheduleRefresh();
     return;
@@ -1879,7 +1882,7 @@ function _silentRefresh(loginHint, loadAfter){
         driveToken = resp.access_token;
         _tokenSave(resp.access_token);
         _fetchUserInfo(resp.access_token).then(()=>{
-          if(loadAfter) _loadDrive(true);
+          if(loadAfter) _loadDrive(true).then(()=>_initialSync());
           _scheduleRefresh();
         });
       } else {
@@ -1924,6 +1927,7 @@ function requestGoogleSignIn(){
         _hideLoginWall();
         _applyUserUI();
         await _loadDrive(true); // load existing data first
+        await _initialSync();   // push local data up if Drive is empty
         _scheduleRefresh();
       } else {
         if(st) st.textContent='Sign-in failed — try again.';
@@ -2135,9 +2139,47 @@ async function _loadDrive(silent){
   }
 }
 
+// Called right after sign-in — if Drive has no file yet but browser has data,
+// automatically push local data up so other devices can get it
+async function _initialSync(){
+  if(!driveToken) return;
+  const fid = await _findFile();
+  if(!fid){
+    // No Drive file exists yet — push local data up automatically
+    const hasLocalData = S.transactions.length>0 || S.bills.length>0 || S.income.primary>0 || (S.income.log&&S.income.log.length>0);
+    if(hasLocalData){
+      _setSyncStatus('First sync — uploading your data…');
+      await _saveDrive();
+    }
+  }
+}
+
 // Public wrappers used by settings buttons
 function saveToDrive(){ _saveDrive(); }
 function loadFromDrive(s){ return _loadDrive(s||false); }
+
+// ── Force upload / pull — for first-time setup ──────────────
+async function forceUploadToDrive(){
+  if(!driveToken){
+    alert('Not signed in to Google. Please sign in first.');
+    return;
+  }
+  _setSyncStatus('Uploading…');
+  driveFileId = null; // clear cached ID so we re-check
+  await _saveDrive();
+  _setSyncStatus('✓ Data pushed to Drive — '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));
+  // Update menu sync status too
+  const ms = document.getElementById('menuSyncStatus');
+  if(ms) ms.textContent = '✓ Pushed to Drive';
+}
+
+async function forcePullFromDrive(){
+  if(!driveToken){
+    alert('Not signed in to Google. Please sign in first.');
+    return;
+  }
+  await _loadDrive(false);
+}
 
 // ════════════════════════════════════════════════════════════
 // PULL-TO-REFRESH (mobile)
