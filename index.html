@@ -1620,8 +1620,9 @@ function renderBills(){
 function setSavType(t){
   S.savings.type=t;
   document.querySelectorAll('#savTypeSeg .seg-btn').forEach((b,i)=>b.classList.toggle('active',(i===0&&t==='percent')||(i===1&&t==='fixed')));
-  document.getElementById('savAmtLabel').textContent=t==='percent'?'Percentage (%)':'Fixed Amount ($)';
-  saveState(); renderSavingsView();
+  const lbl = document.getElementById('savAmtLabel');
+  if(lbl) lbl.textContent=t==='percent'?'Percentage (%)':'Fixed Amount ($)';
+  saveState(); // do NOT call renderSavingsView here — that would recurse
 }
 function saveSavings(){ S.savings.amount=parseFloat(document.getElementById('sav_val').value)||0; saveState(); renderSavingsView(); renderDashboard(); }
 function renderSavingsView(){
