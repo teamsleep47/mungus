@@ -1938,28 +1938,17 @@ function initGoogleSignin() {
     return;
   }
   if (cachedToken && nameIsBad) {
-    // Token valid but name is bad — fetch fresh userinfo before showing chip
-    gDriveToken = cachedToken;
-    fetch('https://www.googleapis.com/oauth2/v3/userinfo',
-      { headers: { Authorization: 'Bearer ' + cachedToken } })
-      .then(r => r.ok ? r.json() : null)
-      .then(u => {
-        if (u && u.email) {
-          const fullName = u.name || u.given_name && u.family_name
-            ? (u.given_name||'') + ' ' + (u.family_name||'')
-            : u.given_name || u.email;
-          gUser = { name: fullName.trim()||u.email, email: u.email, picture: u.picture||'' };
-          localStorage.setItem('sav_guser', JSON.stringify(gUser));
-          console.log('[Savings] Name refreshed:', gUser.name);
-        }
-        unlockApp();
-        loadFromDrive();
-        scheduleTokenRefresh();
-      })
-      .catch(() => {
-        // userinfo failed — fall through to silent re-auth to get fresh token + name
-        trySilentAuth().then(ok => { if (!ok) showLoginWall(); });
-      });
+    // Cached token exists but name is bad (stored as "User")
+    // Token is expired (401 on userinfo) — skip it, go straight to silent re-auth
+    // trySilentAuth gets a FRESH token and fetches real name in one shot
+    console.log('[Savings] Bad name detected, running silent re-auth for real name');
+    trySilentAuth().then(ok => {
+      if (!ok) {
+        // Silent auth failed — show login wall
+        showLoginWall();
+      }
+      // If ok, trySilentAuth already called unlockApp + loadFromDrive
+    });
     return;
   }
 
