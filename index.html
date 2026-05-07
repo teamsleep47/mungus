@@ -1863,7 +1863,7 @@ function renderView(v){
 // GOOGLE DRIVE SYNC — exact SCF planner pattern
 // ════════════════════════════════════════════════════════════
 const CLIENT_ID = '558206043149-gv95cmiitlpse6mtnc0ts8pd3dct1aob.apps.googleusercontent.com';
-const SCOPES    = 'https://www.googleapis.com/auth/drive.appdata';
+const SCOPES    = 'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email';
 const FILE_NAME = 'savings_data.json';
 
 let gDriveToken  = null;
@@ -1913,9 +1913,18 @@ function setSyncStatus(status, msg) {
 // ── Main init (called on page load) ──────────────────────────
 function initGoogleSignin() {
   if (typeof google === 'undefined') { setTimeout(initGoogleSignin, 500); return; }
-  // Debug: log cached user so we can verify name is stored
+  // Auto-clear bad cached name ("User"/empty) so sign-in fetches real name
   const _dbg = localStorage.getItem('sav_guser');
-  if (_dbg) { try { const _u=JSON.parse(_dbg); console.log('[Savings] Cached user:', _u.name, _u.email); } catch(e){} }
+  if (_dbg) {
+    try {
+      const _u = JSON.parse(_dbg);
+      console.log('[Savings] Cached user:', _u.name, _u.email);
+      if (!_u.name || _u.name === 'User' || _u.name === '') {
+        localStorage.removeItem('sav_guser');
+        console.log('[Savings] Bad cached name cleared — sign in to get real name');
+      }
+    } catch(e) { localStorage.removeItem('sav_guser'); }
+  }
 
   const savedUser = localStorage.getItem('sav_guser');
   if (!savedUser) { showLoginWall(); return; }
