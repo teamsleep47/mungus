@@ -1009,6 +1009,7 @@ function saveState(){
 // ════════════════════════════════════════════════════════════
 // DATE HELPERS
 // ════════════════════════════════════════════════════════════
+function todayKey(){ return todayStr(); }
 function todayStr(){ return new Date().toISOString().slice(0,10); }
 function daysInMonth(y,m){ return new Date(y,m+1,0).getDate(); }
 function daysRemainingInMonth(){
