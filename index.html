@@ -387,7 +387,7 @@ select option{background:var(--bg3);}
 /* ─── LOGIN WALL ─────────────────────────────────────── */
 #loginWall{
   position:fixed;inset:0;background:var(--bg);
-  z-index:500;display:flex;flex-direction:column;
+  z-index:500;display:none;flex-direction:column;
   overflow-y:auto;
 }
 .login-hdr{
@@ -2089,7 +2089,7 @@ function scheduleTokenRefresh(){
 
 function showLoginWall(){
   const lw=document.getElementById('loginWall');
-  if(lw)lw.style.display='flex';
+  if(lw){ lw.style.display='flex'; lw.style.flexDirection='column'; }
 }
 
 function doSignIn(){runTokenClient();}
