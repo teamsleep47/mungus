@@ -521,7 +521,7 @@ select option{background:var(--bg3);}
 <div id="loginWall">
   <div class="login-hdr">
     <div class="hdr-logo"><div class="hdr-logo-dot"></div>Savings</div>
-    <button class="btn btn-sm" id="loginThemeBtn">☽</button>
+    <button class="btn btn-sm" id="loginThemeBtn" onclick="toggleTheme()">☽</button>
   </div>
   <div class="login-body">
     <div class="login-card">
@@ -628,8 +628,8 @@ select option{background:var(--bg3);}
   <header class="hdr">
     <div class="hdr-logo"><div class="hdr-logo-dot"></div>Savings</div>
     <div class="hdr-right">
-      <button class="btn btn-sm" id="themeBtn">☽</button>
-      <button class="btn btn-sm btn-green export-hide" id="exportBtn">↓ Export</button>
+      <button class="btn btn-sm" id="themeBtn" onclick="toggleTheme()">☽</button>
+      <button class="btn btn-sm btn-green export-hide" id="exportBtn" onclick="exportJSON()">↓ Export</button>
       <input type="file" id="importFile" accept=".json" style="display:none;">
       <button class="btn btn-sm export-hide" onclick="document.getElementById('importFile').click()">↑ Import</button>
       <!-- User chip -->
@@ -654,20 +654,20 @@ select option{background:var(--bg3);}
     <nav class="sidebar">
       <div class="nav-section">
         <div class="nav-lbl">Overview</div>
-        <div class="nav-item active" data-view="dashboard"><span class="nav-ico">◈</span>Dashboard</div>
-        <div class="nav-item" data-view="calendar"><span class="nav-ico">⊞</span>Bill Calendar</div>
-        <div class="nav-item" data-view="forecast"><span class="nav-ico">◷</span>Forecast</div>
+        <div class="nav-item active" data-view="dashboard" onclick="navTo('dashboard')"><span class="nav-ico">◈</span>Dashboard</div>
+        <div class="nav-item" data-view="calendar" onclick="navTo('calendar')"><span class="nav-ico">⊞</span>Bill Calendar</div>
+        <div class="nav-item" data-view="forecast" onclick="navTo('forecast')"><span class="nav-ico">◷</span>Forecast</div>
       </div>
       <div class="nav-section">
         <div class="nav-lbl">Manage</div>
-        <div class="nav-item" data-view="income"><span class="nav-ico">↗</span>Income</div>
-        <div class="nav-item" data-view="bills"><span class="nav-ico">≡</span>Bills</div>
-        <div class="nav-item" data-view="savings"><span class="nav-ico">◎</span>Savings</div>
-        <div class="nav-item" data-view="tracker"><span class="nav-ico">⋮</span>Tracker</div>
+        <div class="nav-item" data-view="income" onclick="navTo('income')"><span class="nav-ico">↗</span>Income</div>
+        <div class="nav-item" data-view="bills" onclick="navTo('bills')"><span class="nav-ico">≡</span>Bills</div>
+        <div class="nav-item" data-view="savings" onclick="navTo('savings')"><span class="nav-ico">◎</span>Savings</div>
+        <div class="nav-item" data-view="tracker" onclick="navTo('tracker')"><span class="nav-ico">⋮</span>Tracker</div>
       </div>
       <div class="nav-section">
         <div class="nav-lbl">System</div>
-        <div class="nav-item" data-view="settings"><span class="nav-ico">⚙</span>Settings</div>
+        <div class="nav-item" data-view="settings" onclick="navTo('settings')"><span class="nav-ico">⚙</span>Settings</div>
       </div>
       <div style="padding:12px;margin-top:auto;">
         <div class="sidebar-widget">
@@ -944,27 +944,27 @@ select option{background:var(--bg3);}
   <!-- Bottom tabs (mobile) -->
   <div class="bottom-tabs">
     <div class="tab-bar">
-      <div class="tab-item active" data-view="dashboard">
+      <div class="tab-item active" data-view="dashboard" onclick="navTo('dashboard')">
         <svg class="tab-ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
         <div class="tab-lbl">Home</div>
       </div>
-      <div class="tab-item" data-view="income">
+      <div class="tab-item" data-view="income" onclick="navTo('income')">
         <svg class="tab-ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         <div class="tab-lbl">Income</div>
       </div>
-      <div class="tab-item" data-view="calendar">
+      <div class="tab-item" data-view="calendar" onclick="navTo('calendar')">
         <svg class="tab-ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         <div class="tab-lbl">Bills</div>
       </div>
-      <div class="tab-item" data-view="tracker">
+      <div class="tab-item" data-view="tracker" onclick="navTo('tracker')">
         <svg class="tab-ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
         <div class="tab-lbl">Track</div>
       </div>
-      <div class="tab-item" data-view="forecast">
+      <div class="tab-item" data-view="forecast" onclick="navTo('forecast')">
         <svg class="tab-ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         <div class="tab-lbl">Forecast</div>
       </div>
-      <div class="tab-item" data-view="settings">
+      <div class="tab-item" data-view="settings" onclick="navTo('settings')">
         <svg class="tab-ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         <div class="tab-lbl">More</div>
       </div>
@@ -1967,6 +1967,16 @@ function exportJSON(){
 
 function calcIncome(){ return calcMonthlyIncome(); }
 
+function toggleTheme(){
+  const t=document.body.getAttribute('data-theme');
+  const isDark=t==='dark';
+  document.body.setAttribute('data-theme',isDark?'light':'dark');
+  const icon=isDark?'☀':'☽';
+  ['themeBtn','loginThemeBtn'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.textContent=icon;
+  });
+}
+
 function navTo(view){
   document.querySelectorAll('.nav-item,.tab-item').forEach(n=>n.classList.toggle('active',n.dataset.view===view));
   document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id==='view-'+view));
@@ -2366,6 +2376,19 @@ function initUI() {
   loadSettingsUI();
   calDate = new Date();
 }
+
+document.getElementById('importFile').addEventListener('change',function(e){
+  const file=e.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const parsed=JSON.parse(ev.target.result);
+      S={...DEF,...parsed};
+      saveState(); initUI(); alert('Data imported successfully.');
+    }catch(err){alert('Invalid JSON file.');}
+  };
+  reader.readAsText(file); this.value='';
+});
 
 loadState();
 initUI();
