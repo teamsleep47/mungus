@@ -1019,7 +1019,10 @@ function saveState(){
 // DATE HELPERS
 // ════════════════════════════════════════════════════════════
 function todayKey(){ return todayStr(); }
-function todayStr(){ return new Date().toISOString().slice(0,10); }
+function todayStr(){
+  const d=new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
 function daysInMonth(y,m){ return new Date(y,m+1,0).getDate(); }
 function daysRemainingInMonth(){
   const n=new Date(); const y=n.getFullYear(),m=n.getMonth(),d=n.getDate();
