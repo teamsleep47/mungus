@@ -141,7 +141,7 @@ body{
 
 /* Content */
 .content{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px;scroll-behavior:smooth;}
-.content > .view.active{max-width:1400px;width:100%;display:flex;flex-direction:column;gap:16px;}
+.content > .view.active{width:100%;display:flex;flex-direction:column;gap:16px;}
 
 /* Bottom tabs — mobile */
 .bottom-tabs{
@@ -169,7 +169,7 @@ body{
 /* ─── CARDS ──────────────────────────────────────────── */
 .card{
   background:var(--bg2);border:1px solid var(--border);
-  border-radius:var(--radius2);padding:18px;
+  border-radius:var(--radius2);padding:22px;
 }
 .card-hdr{
   display:flex;align-items:center;justify-content:space-between;
@@ -227,15 +227,15 @@ select option{background:var(--bg3);}
 .seg-btn.active{background:var(--bg2);color:var(--green);box-shadow:var(--shadow2);}
 
 /* ─── STATS GRID ─────────────────────────────────────── */
-.stat-grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));}
+.stat-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));}
 .stat{
   background:var(--bg3);border:1px solid var(--border);
-  border-radius:var(--radius2);padding:14px 16px;
+  border-radius:var(--radius2);padding:18px 20px;
   transition:border-color .12s;cursor:default;position:relative;
 }
 .stat:hover{border-color:var(--border3);}
 .stat-lbl{font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px;}
-.stat-val{font-family:var(--mono);font-size:24px;font-weight:700;line-height:1;}
+.stat-val{font-family:var(--mono);font-size:28px;font-weight:700;line-height:1;}
 .stat-sub{font-size:11px;color:var(--text3);margin-top:5px;}
 .stat.g .stat-val{color:var(--green);}
 .stat.y .stat-val{color:var(--yellow);}
@@ -788,9 +788,21 @@ select option{background:var(--bg3);}
           <div class="mode-cards" id="modePicker"></div>
           <div id="incomeFields"></div>
           <div style="margin-top:16px;padding:14px;background:var(--bg3);border-radius:var(--radius);">
-            <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:6px;">MONTHLY INCOME (ESTIMATED)</div>
-            <div style="font-family:var(--mono);font-size:24px;font-weight:700;color:var(--green);" id="incMonthlyEq">$0.00</div>
-            <div style="font-size:11px;color:var(--text3);margin-top:4px;" id="incMonthlyNote"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
+              <div>
+                <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:6px;">MONTHLY</div>
+                <div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--green);" id="incMonthlyEq">$0.00</div>
+                <div style="font-size:11px;color:var(--text3);margin-top:4px;" id="incMonthlyNote"></div>
+              </div>
+              <div>
+                <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:6px;">YEARLY</div>
+                <div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--green);" id="incYearlyEq">$0.00</div>
+              </div>
+              <div>
+                <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:6px;">5 YEARS</div>
+                <div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--green);" id="inc5yrEq">$0.00</div>
+              </div>
+            </div>
           </div>
         </div>
         <!-- Variable mode income log -->
@@ -882,7 +894,10 @@ select option{background:var(--bg3);}
         <div class="card">
           <div class="card-hdr">
             <div class="card-title">Transaction Log</div>
-            <button class="btn btn-sm btn-green" onclick="openTxModal()">+ Add</button>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <div id="txSummaryBar" style="font-family:var(--mono);font-size:12px;color:var(--text3);"></div>
+              <button class="btn btn-sm btn-green" onclick="openTxModal()">+ Add</button>
+            </div>
           </div>
           <div id="txFilterRow" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;"></div>
           <div id="txGrouped"></div>
@@ -1598,6 +1613,8 @@ function renderIncomeView(){
   // Monthly eq
   const eq=calcMonthlyIncome();
   document.getElementById('incMonthlyEq').textContent=fmt(eq);
+  const yr=document.getElementById('incYearlyEq'); if(yr) yr.textContent=fmt(eq*12);
+  const f5=document.getElementById('inc5yrEq'); if(f5) f5.textContent=fmt(eq*12*5);
   const notes={fixed:'Primary + additional income per month',hourly:`${S.income.hourlyRate||0}/hr × ${S.income.weeklyHours||0} hrs/wk × 52÷12`,variable:'Sum of income logged this calendar month'};
   document.getElementById('incMonthlyNote').textContent=notes[S.income.mode]||'';
 
@@ -1777,6 +1794,14 @@ function renderTracker(){
   const cats=['Food','Transport','Shopping','Health','Entertainment','Subscriptions','Other'];
   const activeCat=window._txCatFilter||'All';
 
+  // Summary bar
+  const sb=document.getElementById('txSummaryBar');
+  if(sb){
+    const total=S.transactions.reduce((s,t)=>s+t.amount,0);
+    const count=S.transactions.length;
+    sb.textContent=count?`${count} entries · ${fmt(total)} total`:'';
+  }
+
   // Filter chips
   const fr=document.getElementById('txFilterRow');
   if(fr) fr.innerHTML=['All',...cats].map(cat=>`<button class="btn btn-xs"
@@ -1793,7 +1818,12 @@ function renderTracker(){
   if(!container) return;
 
   if(!txs.length){
-    container.innerHTML='<div style="color:var(--text3);font-size:13px;padding:16px 0;text-align:center;">No transactions yet. Start logging to build your history.</div>';
+    container.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px 20px;text-align:center;">
+    <div style="font-size:36px;margin-bottom:16px;opacity:.4;">◎</div>
+    <div style="font-family:var(--mono);font-size:14px;color:var(--text2);margin-bottom:8px;font-weight:600;">No transactions yet</div>
+    <div style="font-size:13px;color:var(--text3);margin-bottom:20px;max-width:280px;line-height:1.6;">Start logging your daily spending to track your rollover and see where your money goes.</div>
+    <button class="btn btn-green" onclick="openTxModal()" style="padding:10px 20px;">+ Log your first transaction</button>
+  </div>`;
   } else {
     const byDate={};
     txs.forEach(t=>{ if(!byDate[t.date]) byDate[t.date]=[]; byDate[t.date].push(t); });
@@ -2252,6 +2282,16 @@ async function findDriveFile(){
     const r=await fetch(
       'https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name%3D%22'+FILE_NAME+'%22&fields=files(id)',
       {headers:{Authorization:'Bearer '+gDriveToken}});
+    if(r.status===401||r.status===403){
+      // Token lacks drive.appdata scope — clear and force re-consent
+      console.log('[Savings] Drive permission error '+r.status+' — needs re-consent');
+      clearSessionToken();
+      gDriveToken=null;
+      gDriveFileId=null;
+      // Silent re-auth with full scopes
+      trySilentAuth();
+      return null;
+    }
     const d=await r.json();
     gDriveFileId=(d.files&&d.files[0])?d.files[0].id:null;
   }catch(e){gDriveFileId=null;}
