@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>Savings</title>
+<title>Savings v8.0</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300;400;500;600;700&family=Geist:wght@300;400;500;600&display=swap');
@@ -497,7 +497,7 @@ select option{background:var(--bg3);}
   .user-chip.visible{padding:3px;border-radius:50%;}
   .user-chip.visible .avatar{width:34px;height:34px;font-size:14px;}
   #hdrSignInBtn{font-size:12px;padding:6px 10px;}
-  .cal-day{min-height:56px;}
+  .cal-day{min-height:64px;padding:5px;}
   .card{padding:16px;}
   .export-hide{display:none;}
   .modal{padding:18px;}
@@ -510,6 +510,7 @@ select option{background:var(--bg3);}
   .stat-grid{grid-template-columns:1fr 1fr;}
   .tab-lbl{display:none;}
   .tab-ico{font-size:22px;}
+  #syncStrip{display:none !important;}
 }
 @media(min-width:681px){
   .bottom-tabs{display:none;}
@@ -637,6 +638,11 @@ select option{background:var(--bg3);}
   <header class="hdr">
     <div class="hdr-logo"><div class="hdr-logo-dot"></div>Savings</div>
     <div class="hdr-right">
+      <!-- Inline sync status in header -->
+      <div id="syncStrip" style="display:none;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--text3);padding:4px 10px;background:var(--bg3);border-radius:20px;border:1px solid var(--border2);">
+        <span id="syncDot" style="width:6px;height:6px;border-radius:50%;background:var(--text3);flex-shrink:0;display:inline-block;"></span>
+        <span id="syncStripMsg"></span>
+      </div>
       <button class="btn btn-sm" id="themeBtn" onclick="toggleTheme()">☽</button>
       <button class="btn btn-sm btn-green export-hide" id="exportBtn" onclick="exportJSON()">↓ Export</button>
       <input type="file" id="importFile" accept=".json" style="display:none;">
@@ -651,12 +657,6 @@ select option{background:var(--bg3);}
       <button class="btn btn-sm" id="hdrSignInBtn" onclick="requestGoogleSignIn()" style="white-space:nowrap;">Sign in</button>
     </div>
   </header>
-
-  <!-- Sync indicator strip -->
-  <div id="syncStrip" style="display:none;height:28px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;align-items:center;justify-content:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--text3);">
-    <span id="syncDot" style="width:6px;height:6px;border-radius:50%;background:var(--text3);flex-shrink:0;display:inline-block;"></span>
-    <span id="syncStripMsg">Connecting…</span>
-  </div>
 
   <div class="body">
     <!-- Sidebar -->
@@ -884,6 +884,23 @@ select option{background:var(--bg3);}
           
         </div>
         <div class="card">
+          <div class="card-hdr">
+            <div class="card-title">Savings Allocations</div>
+            <button class="btn btn-sm btn-green" onclick="addSavingsGoal()">+ Goal</button>
+          </div>
+          <div class="card-sub">Divide your savings into named goals. This does not change your savings total — it just tracks where it's going.</div>
+          <div id="savingsGoalsList"></div>
+          <div id="savingsGoalsTotal" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:none;">
+            <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:13px;">
+              <span style="color:var(--text3);">Allocated</span><span id="savingsGoalsAllocated">$0.00</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:13px;margin-top:4px;">
+              <span style="color:var(--text3);">Unallocated</span><span id="savingsGoalsUnallocated" style="color:var(--green);">$0.00</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
           <div class="card-hdr"><div class="card-title">Safety Buffer</div></div>
           <div class="card-sub">Your minimum safe balance. If rollover + remaining daily allowance drops below this number, a warning appears on the dashboard. Example: buffer = $100, you have $80 left → red alert. It never locks spending — it just flags when you're close to $0 so you can act before it's too late.</div>
           <div class="form-row">
@@ -1003,7 +1020,8 @@ const DEF = {
   settings: { minBuffer:100, rollover:0 },
   transactions: [],
   billPaid: {},
-  googleUser: null
+  googleUser: null,
+  savingsGoals: []
 };
 let S = deepClone(DEF);
 let calDate = new Date();
@@ -1242,8 +1260,15 @@ function renderDashboard(){
 
   // Alert banners
   let alertHtml='';
-  if(totalLiq<buffer) alertHtml=`<div class="alert r" style="margin-bottom:0;">⚠ LOW BUFFER — Spending balance is critically low. Proceed carefully.</div>`;
-  else if(totalLiq<buffer*2) alertHtml=`<div class="alert y" style="margin-bottom:0;">◆ Approaching minimum buffer. Watch spending today.</div>`;
+  const daysToRecover = safe<0 ? Math.ceil(Math.abs(safe)/daily) : 0;
+  if(safe<0){
+    alertHtml=`<div class="alert r" style="margin-bottom:0;">
+      <div>
+        <div style="font-weight:700;margin-bottom:4px;">⚠ Spending Deficit — You are currently $${Math.abs(safe).toFixed(2)} over your available balance.</div>
+        <div style="font-size:12px;opacity:.9;line-height:1.6;">Your daily allowance of ${fmt(daily)} will gradually offset this over time. At current pace, you'll recover in approximately <strong>${daysToRecover} day${daysToRecover!==1?'s':''}</strong> if no further spending occurs. Your bills and savings are unaffected — they are calculated before your spending fund and remain fully protected.</div>
+      </div>
+    </div>`;
+  } else if(totalLiq<buffer) alertHtml=`<div class="alert y" style="margin-bottom:0;">◆ LOW BUFFER — Spending balance is approaching your safety minimum. Proceed with caution.</div>`;
   document.getElementById('alertBanner').innerHTML=alertHtml;
 
   document.getElementById('dashDate').textContent=new Date().toLocaleDateString('en-US',{weekday:'short',month:'long',day:'numeric'});
@@ -1293,11 +1318,17 @@ function renderDashboard(){
 
   renderTodayPanel();
   renderUpcomingShort();
-  const _day=new Date().getDate(),_dim=currentMonthDays();
-  const _pct=Math.min(100,Math.round((_day-1)/_dim*100));
-  const _rem=Math.max(0,fund-daily*(_day-1));
-  const fsub=document.getElementById('fundSubText'); if(fsub) fsub.textContent=`${fmt(_rem)} left · day ${_day}/${_dim}`;
-  const fprog=document.getElementById('fundProg'); if(fprog) fprog.style.width=_pct+'%';
+  // Progress bar: transactions spent vs total spending fund
+  const _now=new Date(); const _y=_now.getFullYear(),_m=_now.getMonth();
+  const _monthStart=new Date(_y,_m,1).toISOString().slice(0,8); // YYYY-MM-
+  const _monthSpent=S.transactions.filter(t=>t.date.startsWith(_monthStart.slice(0,7))).reduce((s,t)=>s+t.amount,0);
+  const _pct=fund>0?Math.min(100,Math.round((_monthSpent/fund)*100)):0;
+  const _rem=Math.max(0,fund-_monthSpent);
+  const _day=_now.getDate(),_dim=currentMonthDays();
+  const fsub=document.getElementById('fundSubText');
+  if(fsub) fsub.textContent=`${fmt(_rem)} left · ${fmt(_monthSpent)} spent`;
+  const fprog=document.getElementById('fundProg');
+  if(fprog){ fprog.style.width=_pct+'%'; fprog.style.background=_pct>90?'var(--red)':_pct>70?'var(--yellow)':'var(--blue)'; }
   updateSidebarWidget();
 }
 
@@ -1307,9 +1338,11 @@ function renderTodayPanel(){
   const spent=getTodaySpent(), daily=calcDailyAllowance(), roll=S.settings.rollover||0, rem=calcSafeToSpend();
   const el=document.getElementById('todayActivity');
   el.innerHTML=txs.length?txs.slice(0,5).map(t=>`
-    <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);">
+    <div data-txid="${t.id}" ondblclick="startEditTx('${t.id}');renderDashboard()"
+      style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);cursor:default;"
+      title="Double-click to edit">
       <div><div style="font-size:13px;">${t.desc}</div><div style="font-size:11px;color:var(--text3);">${t.category}</div></div>
-      <div style="font-family:var(--mono);color:var(--red);">−${fmt(t.amount)}</div>
+      <div style="font-family:var(--mono);color:var(--red);font-size:13px;">−${fmt(t.amount)}</div>
     </div>`).join('')
   :`<div style="color:var(--text3);font-size:13px;padding:8px 0;">No transactions today.</div>`;
   // Populate footer labels
@@ -1431,8 +1464,8 @@ function renderCalendar(){
         const c=paid?'g':days<=0?'r':days<=7?'y':'g';
         const colorVar=paid?'var(--green)':days<=0?'var(--red)':days<=7?'var(--yellow)':'var(--green)';
         return `<div style="display:flex;align-items:center;gap:3px;margin-top:2px;overflow:hidden;">
-          <div style="width:5px;height:5px;border-radius:50%;background:${colorVar};flex-shrink:0;"></div>
-          <div style="font-size:9px;color:${colorVar};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3;font-family:var(--mono);">${b.name} <span style="opacity:.7;">${fmt(b.amount)}</span></div>
+          <div style="width:6px;height:6px;border-radius:50%;background:${colorVar};flex-shrink:0;"></div>
+          <div style="font-size:10px;font-weight:500;color:${colorVar};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4;font-family:var(--mono);">${b.name} <span style="font-weight:400;opacity:.85;">${fmt(b.amount)}</span></div>
         </div>`;
       }).join('');
       html+=`<div class="cal-day${isToday?' today':''}" data-day="${day}" onclick="showCalPopup(event,${day},${m},${y})">
@@ -1710,7 +1743,7 @@ function renderBills(){
   const el=document.getElementById('billsTable');
   if(!S.bills.length){ el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:8px 0;">No bills yet.</div>'; return; }
   el.innerHTML=`<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Name</th><th>Category</th><th>Freq</th><th>Due</th><th style="text-align:right">Amount</th><th style="text-align:right">Monthly</th><th></th></tr></thead><tbody>
-    ${S.bills.map(b=>`<tr>
+    ${S.bills.map(b=>`<tr ondblclick="openEditBill('${b.id}')" style="cursor:pointer;" title="Double-click to edit">
       <td>${b.name}</td><td><span class="badge muted">${b.category||'—'}</span></td>
       <td style="font-size:12px;">${b.frequency}</td><td style="font-family:var(--mono);font-size:12px;">Day ${b.due}</td>
       <td style="font-family:var(--mono);text-align:right;">${fmt(b.amount)}</td>
@@ -1731,7 +1764,106 @@ function setSavType(t){
   saveState(); // do NOT call renderSavingsView here — that would recurse
 }
 function saveSavings(){ S.savings.amount=parseFloat(document.getElementById('sav_val').value)||0; saveState(); renderSavingsView(); renderDashboard(); }
+
+// ── Savings Allocations ──────────────────────────────────────
+function renderSavingsGoals(){
+  if(!S.savingsGoals) S.savingsGoals=[];
+  const monthly = calcSavings(calcMonthlyIncome());
+  const el = document.getElementById('savingsGoalsList');
+  const totEl = document.getElementById('savingsGoalsTotal');
+  if(!el) return;
+
+  if(!S.savingsGoals.length){
+    el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:8px 0;">No goals yet. Add one to start allocating your savings.</div>';
+    if(totEl) totEl.style.display='none';
+    return;
+  }
+
+  const allocated = S.savingsGoals.reduce((s,g)=>s+(g.amount||0),0);
+  const unalloc = monthly - allocated;
+
+  el.innerHTML = S.savingsGoals.map((g,i)=>{
+    const pct = monthly>0 ? Math.min(100,Math.round((g.amount/monthly)*100)) : 0;
+    const saved = g.saved||0;
+    const targetPct = g.target>0 ? Math.min(100,Math.round((saved/g.target)*100)) : 0;
+    return `<div style="padding:12px;background:var(--bg3);border-radius:var(--radius);margin-bottom:8px;border:1px solid var(--border2);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;">
+          <div style="width:10px;height:10px;border-radius:50%;background:${g.color||'var(--blue)'};flex-shrink:0;"></div>
+          <span style="font-size:14px;font-weight:600;cursor:pointer;" ondblclick="editSavingsGoalInline(${i},this)" title="Double-click to edit">${g.name}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+          <span style="font-family:var(--mono);font-size:13px;color:var(--blue);">${fmt(g.amount||0)}<span style="font-size:11px;color:var(--text3);">/mo</span></span>
+          <button class="btn btn-xs btn-red" onclick="removeSavingsGoal(${i})">✕</button>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text3);margin-bottom:4px;">
+        <span>${pct}% of monthly savings</span>
+        ${g.target>0?`<span>${fmt(saved)} / ${fmt(g.target)} saved</span>`:''}
+      </div>
+      <div class="prog-track">
+        <div class="prog-fill" style="width:${g.target>0?targetPct:pct}%;background:${g.color||'var(--blue)'}"></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  if(totEl){
+    totEl.style.display='block';
+    const al = document.getElementById('savingsGoalsAllocated');
+    const un = document.getElementById('savingsGoalsUnallocated');
+    if(al) al.textContent = fmt(allocated);
+    if(un){ un.textContent = fmtS(unalloc); un.style.color = unalloc<0?'var(--red)':'var(--green)'; }
+  }
+}
+
+function addSavingsGoal(){
+  const colors=['var(--blue)','var(--green)','var(--purple)','var(--yellow)','var(--red)'];
+  const name=prompt('Goal name (e.g. Emergency Fund, Vacation):');
+  if(!name||!name.trim()) return;
+  const amtStr=prompt('Monthly allocation from savings ($):');
+  const amount=parseFloat(amtStr)||0;
+  const targetStr=prompt('Savings target total (optional, press Enter to skip):');
+  const target=parseFloat(targetStr)||0;
+  if(!S.savingsGoals) S.savingsGoals=[];
+  S.savingsGoals.push({
+    id:Date.now().toString(),
+    name:name.trim(),
+    amount,
+    target,
+    saved:0,
+    color:colors[S.savingsGoals.length%colors.length]
+  });
+  saveState(); renderSavingsGoals(); renderSavingsView();
+}
+
+function removeSavingsGoal(i){
+  if(!confirm('Remove this goal?')) return;
+  S.savingsGoals.splice(i,1);
+  saveState(); renderSavingsGoals();
+}
+
+function editSavingsGoalInline(i, el){
+  const g = S.savingsGoals[i];
+  const orig = el.textContent;
+  el.contentEditable='true';
+  el.style.borderBottom='1px solid var(--green)';
+  el.style.outline='none';
+  el.focus();
+  const sel=window.getSelection(); const range=document.createRange();
+  range.selectNodeContents(el); sel.removeAllRanges(); sel.addRange(range);
+  const save=()=>{
+    el.contentEditable='false';
+    el.style.borderBottom='';
+    const val=el.textContent.trim();
+    if(val){ g.name=val; saveState(); renderSavingsGoals(); }
+    else el.textContent=orig;
+  };
+  el.addEventListener('blur',save,{once:true});
+  el.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();el.blur();}});
+}
+
 function renderSavingsView(){
+  if(!S.savingsGoals) S.savingsGoals=[];
   document.getElementById('sav_val').value=S.savings.amount||0;
   const _sm=calcSavings(calcMonthlyIncome());
   document.getElementById('savingsDisplay').textContent=fmt(_sm);
@@ -1739,6 +1871,7 @@ function renderSavingsView(){
   const _s5=document.getElementById('savings5yr'); if(_s5) _s5.textContent=fmt(_sm*12*5);
   setSavType(S.savings.type);
   document.getElementById('bufferVal').value=S.settings.minBuffer||100;
+  renderSavingsGoals();
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1972,7 +2105,14 @@ function startEditTx(id){
   row.style.cssText='display:flex;align-items:center;gap:6px;padding:8px 12px;background:var(--bg3);border-bottom:1px solid var(--border);flex-wrap:wrap;';
   ['etx_d_','etx_n_','etx_c_','etx_a_'].forEach(p=>{
     const el=document.getElementById(p+id);
-    if(el) el.addEventListener('keydown',e=>{ if(e.key==='Enter') saveEditTx(id); if(e.key==='Escape') renderTracker(); });
+    if(el){
+      el.addEventListener('keydown',e=>{ if(e.key==='Enter') saveEditTx(id); if(e.key==='Escape') renderTracker(); });
+      el.addEventListener('blur',()=>{ setTimeout(()=>{
+        // Only save if focus moved outside the edit row
+        const row=document.querySelector(`[data-txid="${id}"]`);
+        if(row && !row.contains(document.activeElement)) saveEditTx(id);
+      },150); });
+    }
   });
   document.getElementById('etx_n_'+id)?.focus();
 }
@@ -2096,7 +2236,7 @@ function setSyncStatus(status,msg){
   const label=document.getElementById('syncStripMsg');
   if(strip&&dot&&label){
     if(!msg){strip.style.display='none';return;}
-    strip.style.display='flex';
+    strip.style.display='inline-flex';
     dot.style.background=status==='synced'?'var(--green)':status==='syncing'?'var(--yellow)':status==='error'?'var(--red)':'var(--text3)';
     label.style.color=dot.style.background;
     label.textContent=msg;
