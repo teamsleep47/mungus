@@ -1951,6 +1951,72 @@ function renderAllPanels() {
   renderUserChip();
 }
 
+// ── Missing functions restored ───────────────────────────────
+
+function loadSettingsUI(){
+  const rd=document.getElementById('set_rollover_display');
+  if(rd){ const r=S.settings.rollover||0; rd.textContent=(r>=0?'':'-')+'$'+Math.abs(r).toFixed(2); rd.style.color=r<0?'var(--red)':r===0?'var(--text2)':'var(--green)'; }
+  const bv=document.getElementById('bufferVal'); if(bv) bv.value=S.settings.minBuffer||100;
+}
+
+function saveSettings(){
+  S.settings.minBuffer=parseFloat(document.getElementById('bufferVal').value)||100;
+  saveState(); renderDashboard();
+}
+
+function saveRollover(){
+  // Rollover is auto-calculated — no manual save needed
+  renderDashboard();
+}
+
+function clearAll(){
+  if(!confirm('Clear ALL data? Cannot be undone.')) return;
+  S=deepClone(DEF); saveState(); initUI();
+}
+
+function exportJSON(){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(S,null,2)],{type:'application/json'}));
+  a.download='budget-system.json'; a.click();
+}
+
+function calcIncome(){ return calcMonthlyIncome(); }
+
+function navTo(view){
+  document.querySelectorAll('.nav-item,.tab-item').forEach(n=>n.classList.toggle('active',n.dataset.view===view));
+  document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id==='view-'+view));
+  renderView(view);
+}
+
+function renderView(v){
+  if(v==='dashboard') renderDashboard();
+  else if(v==='calendar') renderCalendar();
+  else if(v==='forecast') renderForecast();
+  else if(v==='income') renderIncomeView();
+  else if(v==='bills') renderBills();
+  else if(v==='savings') renderSavingsView();
+  else if(v==='tracker') renderTracker();
+  else if(v==='settings') loadSettingsUI();
+}
+
+function openIncModal(){
+  document.getElementById('inc_desc').value='';
+  document.getElementById('inc_inc_amount').value='';
+  document.getElementById('inc_date').value=todayStr();
+  document.getElementById('incModal').classList.add('open');
+}
+function closeIncModal(){ document.getElementById('incModal').classList.remove('open'); }
+
+function saveIncomeEntry(){
+  const desc=document.getElementById('inc_desc').value.trim();
+  const amount=parseFloat(document.getElementById('inc_inc_amount').value)||0;
+  const date=document.getElementById('inc_date').value;
+  if(!desc||!amount){ alert('Source and amount required.'); return; }
+  if(!S.income.log) S.income.log=[];
+  S.income.log.push({id:Date.now().toString(),desc,amount,date});
+  saveState(); closeIncModal(); renderIncomeLog(); renderDashboard();
+}
+
 // ════════════════════════════════════════════════════════════
 // GOOGLE DRIVE SYNC
 // ════════════════════════════════════════════════════════════
