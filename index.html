@@ -1854,7 +1854,7 @@ function renderTracker(){
       const isToday=date===todStr;
       const isYest=date===new Date(Date.now()-86400000).toISOString().slice(0,10);
       const label=isToday?'Today':isYest?'Yesterday':new Date(date+'T00:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
-      const open=i<2;
+      const open=true; // all day groups open by default
       html+=`<div style="margin-bottom:6px;">
         <div onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.querySelector('.tx-arr').style.transform=this.nextElementSibling.style.display==='block'?'rotate(90deg)':''"
           style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg3);border-radius:var(--radius);cursor:pointer;border:1px solid var(--border);user-select:none;">
@@ -1886,13 +1886,13 @@ function renderTracker(){
         <div onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.querySelector('.tx-arr').style.transform=this.nextElementSibling.style.display==='block'?'rotate(90deg)':''"
           style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg3);border-radius:var(--radius);cursor:pointer;border:1px solid var(--border);user-select:none;">
           <div style="display:flex;align-items:center;gap:8px;">
-            <span class="tx-arr" style="color:var(--text3);font-size:11px;transition:transform .15s;">▶</span>
+            <span class="tx-arr" style="color:var(--text3);font-size:11px;transition:transform .15s;transform:rotate(90deg);">▶</span>
             <span style="font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text2);">${wlbl}</span>
             <span style="font-size:11px;color:var(--text3);">${wTxs.length} items</span>
           </div>
           <span style="font-family:var(--mono);font-size:13px;color:var(--red);">−${fmt(wTotal)}</span>
         </div>
-        <div style="display:none;">
+        <div style="display:block;">
           ${wDates.map(d=>`
             <div style="padding:5px 12px;font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;background:var(--bg4);border-bottom:1px solid var(--border);">
               ${new Date(d+'T00:00:00').toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'})} — ${fmt(byDate[d].reduce((s,t)=>s+t.amount,0))}
