@@ -886,15 +886,44 @@ select option{background:var(--bg3);}
         <div class="card">
           <div class="card-hdr">
             <div class="card-title">Savings Allocations</div>
-            <button class="btn btn-sm btn-green" onclick="addSavingsGoal()">+ Goal</button>
+            <button class="btn btn-sm btn-green" onclick="openAddGoalForm()">+ Goal</button>
           </div>
-          <div class="card-sub">Divide your savings into named goals. This does not change your savings total — it just tracks where it's going.</div>
+          <div class="card-sub">Divide your savings into named goals. Does not change your savings total — just tracks where it goes.</div>
+
+          <!-- Add goal inline form (hidden by default) -->
+          <div id="addGoalForm" style="display:none;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);padding:14px;margin-bottom:14px;">
+            <div class="form-row" style="margin-bottom:10px;">
+              <div class="fg" style="flex:2;">
+                <label>Goal Name</label>
+                <input type="text" id="newGoalName" placeholder="Emergency Fund, Vacation…"
+                  onkeydown="if(event.key==='Enter')saveNewGoal();if(event.key==='Escape')closeAddGoalForm()">
+              </div>
+              <div class="fg">
+                <label>Monthly ($)</label>
+                <input type="number" id="newGoalAmount" placeholder="0.00" step="0.01" min="0"
+                  onkeydown="if(event.key==='Enter')saveNewGoal();if(event.key==='Escape')closeAddGoalForm()">
+              </div>
+              <div class="fg">
+                <label>Target Total ($)</label>
+                <input type="number" id="newGoalTarget" placeholder="Optional" step="0.01" min="0"
+                  onkeydown="if(event.key==='Enter')saveNewGoal();if(event.key==='Escape')closeAddGoalForm()">
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-green btn-sm" onclick="saveNewGoal()">Add Goal</button>
+              <button class="btn btn-sm" onclick="closeAddGoalForm()">Cancel</button>
+            </div>
+          </div>
+
+          <!-- Goals list -->
           <div id="savingsGoalsList"></div>
+
+          <!-- Totals -->
           <div id="savingsGoalsTotal" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:none;">
-            <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:13px;">
+            <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:13px;margin-bottom:4px;">
               <span style="color:var(--text3);">Allocated</span><span id="savingsGoalsAllocated">$0.00</span>
             </div>
-            <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:13px;margin-top:4px;">
+            <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:13px;">
               <span style="color:var(--text3);">Unallocated</span><span id="savingsGoalsUnallocated" style="color:var(--green);">$0.00</span>
             </div>
           </div>
@@ -1766,74 +1795,32 @@ function setSavType(t){
 function saveSavings(){ S.savings.amount=parseFloat(document.getElementById('sav_val').value)||0; saveState(); renderSavingsView(); renderDashboard(); }
 
 // ── Savings Allocations ──────────────────────────────────────
-function renderSavingsGoals(){
-  if(!S.savingsGoals) S.savingsGoals=[];
-  const monthly = calcSavings(calcMonthlyIncome());
-  const el = document.getElementById('savingsGoalsList');
-  const totEl = document.getElementById('savingsGoalsTotal');
-  if(!el) return;
-
-  if(!S.savingsGoals.length){
-    el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:8px 0;">No goals yet. Add one to start allocating your savings.</div>';
-    if(totEl) totEl.style.display='none';
-    return;
-  }
-
-  const allocated = S.savingsGoals.reduce((s,g)=>s+(g.amount||0),0);
-  const unalloc = monthly - allocated;
-
-  el.innerHTML = S.savingsGoals.map((g,i)=>{
-    const pct = monthly>0 ? Math.min(100,Math.round((g.amount/monthly)*100)) : 0;
-    const saved = g.saved||0;
-    const targetPct = g.target>0 ? Math.min(100,Math.round((saved/g.target)*100)) : 0;
-    return `<div style="padding:12px;background:var(--bg3);border-radius:var(--radius);margin-bottom:8px;border:1px solid var(--border2);">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-        <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;">
-          <div style="width:10px;height:10px;border-radius:50%;background:${g.color||'var(--blue)'};flex-shrink:0;"></div>
-          <span style="font-size:14px;font-weight:600;cursor:pointer;" ondblclick="editSavingsGoalInline(${i},this)" title="Double-click to edit">${g.name}</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-          <span style="font-family:var(--mono);font-size:13px;color:var(--blue);">${fmt(g.amount||0)}<span style="font-size:11px;color:var(--text3);">/mo</span></span>
-          <button class="btn btn-xs btn-red" onclick="removeSavingsGoal(${i})">✕</button>
-        </div>
-      </div>
-      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text3);margin-bottom:4px;">
-        <span>${pct}% of monthly savings</span>
-        ${g.target>0?`<span>${fmt(saved)} / ${fmt(g.target)} saved</span>`:''}
-      </div>
-      <div class="prog-track">
-        <div class="prog-fill" style="width:${g.target>0?targetPct:pct}%;background:${g.color||'var(--blue)'}"></div>
-      </div>
-    </div>`;
-  }).join('');
-
-  if(totEl){
-    totEl.style.display='block';
-    const al = document.getElementById('savingsGoalsAllocated');
-    const un = document.getElementById('savingsGoalsUnallocated');
-    if(al) al.textContent = fmt(allocated);
-    if(un){ un.textContent = fmtS(unalloc); un.style.color = unalloc<0?'var(--red)':'var(--green)'; }
-  }
+function openAddGoalForm(){
+  const f=document.getElementById('addGoalForm');
+  if(f){ f.style.display='block'; document.getElementById('newGoalName')?.focus(); }
 }
-
-function addSavingsGoal(){
-  const colors=['var(--blue)','var(--green)','var(--purple)','var(--yellow)','var(--red)'];
-  const name=prompt('Goal name (e.g. Emergency Fund, Vacation):');
-  if(!name||!name.trim()) return;
-  const amtStr=prompt('Monthly allocation from savings ($):');
-  const amount=parseFloat(amtStr)||0;
-  const targetStr=prompt('Savings target total (optional, press Enter to skip):');
-  const target=parseFloat(targetStr)||0;
+function closeAddGoalForm(){
+  const f=document.getElementById('addGoalForm');
+  if(f) f.style.display='none';
+  ['newGoalName','newGoalAmount','newGoalTarget'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+}
+function saveNewGoal(){
+  const name=(document.getElementById('newGoalName')?.value||'').trim();
+  const amount=parseFloat(document.getElementById('newGoalAmount')?.value)||0;
+  const target=parseFloat(document.getElementById('newGoalTarget')?.value)||0;
+  if(!name){ document.getElementById('newGoalName')?.focus(); return; }
   if(!S.savingsGoals) S.savingsGoals=[];
+  const colors=['var(--blue)','var(--green)','var(--purple)','var(--yellow)','var(--red)'];
   S.savingsGoals.push({
     id:Date.now().toString(),
-    name:name.trim(),
-    amount,
-    target,
-    saved:0,
+    name, amount, target, saved:0,
     color:colors[S.savingsGoals.length%colors.length]
   });
-  saveState(); renderSavingsGoals(); renderSavingsView();
+  saveState();
+  closeAddGoalForm();
+  renderSavingsGoals();
 }
 
 function removeSavingsGoal(i){
@@ -1842,24 +1829,126 @@ function removeSavingsGoal(i){
   saveState(); renderSavingsGoals();
 }
 
-function editSavingsGoalInline(i, el){
-  const g = S.savingsGoals[i];
-  const orig = el.textContent;
-  el.contentEditable='true';
-  el.style.borderBottom='1px solid var(--green)';
-  el.style.outline='none';
-  el.focus();
-  const sel=window.getSelection(); const range=document.createRange();
-  range.selectNodeContents(el); sel.removeAllRanges(); sel.addRange(range);
-  const save=()=>{
-    el.contentEditable='false';
-    el.style.borderBottom='';
-    const val=el.textContent.trim();
-    if(val){ g.name=val; saveState(); renderSavingsGoals(); }
-    else el.textContent=orig;
-  };
-  el.addEventListener('blur',save,{once:true});
-  el.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();el.blur();}});
+function renderSavingsGoals(){
+  if(!S.savingsGoals) S.savingsGoals=[];
+  const monthly=calcSavings(calcMonthlyIncome());
+  const el=document.getElementById('savingsGoalsList');
+  const totEl=document.getElementById('savingsGoalsTotal');
+  if(!el) return;
+
+  if(!S.savingsGoals.length){
+    el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:8px 0;">No goals yet. Use "+ Goal" to start allocating.</div>';
+    if(totEl) totEl.style.display='none';
+    return;
+  }
+
+  const allocated=S.savingsGoals.reduce((s,g)=>s+(g.amount||0),0);
+  const unalloc=monthly-allocated;
+
+  el.innerHTML=S.savingsGoals.map((g,i)=>{
+    const pct=monthly>0?Math.min(100,Math.round((g.amount/monthly)*100)):0;
+    const saved=g.saved||0;
+    const targetPct=g.target>0?Math.min(100,Math.round((saved/g.target)*100)):0;
+    const barPct=g.target>0?targetPct:pct;
+    const barColor=g.color||'var(--blue)';
+    return `<div id="goal-row-${i}" style="padding:12px;background:var(--bg3);border-radius:var(--radius);margin-bottom:8px;border:1px solid var(--border2);">
+      <!-- View mode -->
+      <div id="goal-view-${i}">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;">
+            <div style="width:10px;height:10px;border-radius:50%;background:${barColor};flex-shrink:0;"></div>
+            <span style="font-size:14px;font-weight:600;">${g.name}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+            <span style="font-family:var(--mono);font-size:13px;color:var(--blue);">${fmt(g.amount||0)}<span style="font-size:11px;color:var(--text3);">/mo</span></span>
+            <button class="btn btn-xs" onclick="startEditGoal(${i})" title="Edit">✎</button>
+            <button class="btn btn-xs btn-red" onclick="removeSavingsGoal(${i})">✕</button>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text3);margin-bottom:4px;">
+          <span>${pct}% of monthly savings${g.target>0?' · Target: '+fmt(g.target):''}</span>
+          ${g.target>0?`<span style="color:var(--text2);">${fmt(saved)} saved (${targetPct}%)</span>`:''}
+        </div>
+        <div class="prog-track">
+          <div class="prog-fill" style="width:${barPct}%;background:${barColor};"></div>
+        </div>
+      </div>
+      <!-- Edit mode (hidden) -->
+      <div id="goal-edit-${i}" style="display:none;">
+        <div class="form-row" style="margin-bottom:8px;">
+          <div class="fg" style="flex:2;">
+            <label>Goal Name</label>
+            <input type="text" id="ge-name-${i}" value="${g.name}"
+              onkeydown="if(event.key==='Enter')saveEditGoal(${i});if(event.key==='Escape')cancelEditGoal(${i})"
+              onblur="scheduleGoalSave(${i})">
+          </div>
+          <div class="fg">
+            <label>Monthly ($)</label>
+            <input type="number" id="ge-amt-${i}" value="${g.amount||0}" step="0.01" min="0"
+              onkeydown="if(event.key==='Enter')saveEditGoal(${i});if(event.key==='Escape')cancelEditGoal(${i})"
+              onblur="scheduleGoalSave(${i})">
+          </div>
+          <div class="fg">
+            <label>Target ($)</label>
+            <input type="number" id="ge-target-${i}" value="${g.target||0}" step="0.01" min="0"
+              onkeydown="if(event.key==='Enter')saveEditGoal(${i});if(event.key==='Escape')cancelEditGoal(${i})"
+              onblur="scheduleGoalSave(${i})">
+          </div>
+          <div class="fg">
+            <label>Saved ($)</label>
+            <input type="number" id="ge-saved-${i}" value="${g.saved||0}" step="0.01" min="0"
+              onkeydown="if(event.key==='Enter')saveEditGoal(${i});if(event.key==='Escape')cancelEditGoal(${i})"
+              onblur="scheduleGoalSave(${i})">
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-green btn-sm" onclick="saveEditGoal(${i})">Save</button>
+          <button class="btn btn-sm" onclick="cancelEditGoal(${i})">Cancel</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  if(totEl){
+    totEl.style.display='block';
+    const al=document.getElementById('savingsGoalsAllocated');
+    const un=document.getElementById('savingsGoalsUnallocated');
+    if(al) al.textContent=fmt(allocated);
+    if(un){ un.textContent=fmtS(unalloc); un.style.color=unalloc<0?'var(--red)':'var(--green)'; }
+  }
+}
+
+let _goalSaveTimer={};
+function scheduleGoalSave(i){
+  clearTimeout(_goalSaveTimer[i]);
+  _goalSaveTimer[i]=setTimeout(()=>{
+    const editEl=document.getElementById('goal-edit-'+i);
+    if(editEl&&editEl.style.display!=='none'&&!editEl.contains(document.activeElement)){
+      saveEditGoal(i);
+    }
+  },200);
+}
+
+function startEditGoal(i){
+  document.getElementById('goal-view-'+i).style.display='none';
+  document.getElementById('goal-edit-'+i).style.display='block';
+  document.getElementById('ge-name-'+i)?.focus();
+}
+
+function saveEditGoal(i){
+  const g=S.savingsGoals[i]; if(!g) return;
+  const name=(document.getElementById('ge-name-'+i)?.value||'').trim();
+  const amount=parseFloat(document.getElementById('ge-amt-'+i)?.value)||0;
+  const target=parseFloat(document.getElementById('ge-target-'+i)?.value)||0;
+  const saved=parseFloat(document.getElementById('ge-saved-'+i)?.value)||0;
+  if(!name) return;
+  g.name=name; g.amount=amount; g.target=target; g.saved=saved;
+  saveState(); renderSavingsGoals();
+}
+
+function cancelEditGoal(i){
+  document.getElementById('goal-view-'+i).style.display='block';
+  document.getElementById('goal-edit-'+i).style.display='none';
 }
 
 function renderSavingsView(){
@@ -2092,30 +2181,40 @@ function _txRow(t){
 function startEditTx(id){
   const t=S.transactions.find(x=>x.id===id); if(!t) return;
   const row=document.querySelector(`[data-txid="${id}"]`); if(!row) return;
-  const orig=row.innerHTML;
   row.innerHTML=`
-    <input type="date" value="${t.date}" id="etx_d_${id}" style="width:120px;font-size:12px;padding:4px 6px;flex-shrink:0;">
-    <input type="text" value="${t.desc}" id="etx_n_${id}" style="flex:1;font-size:12px;padding:4px 6px;" oninput="autoCategory(this.value,'etx_c_${id}')">
-    <select id="etx_c_${id}" style="font-size:12px;padding:4px 6px;flex-shrink:0;">
+    <input type="date" value="${t.date}" id="etx_d_${id}" style="width:120px;font-size:13px;padding:5px 8px;flex-shrink:0;">
+    <input type="text" value="${t.desc}" id="etx_n_${id}" style="flex:1;font-size:13px;padding:5px 8px;" oninput="autoCategory(this.value,'etx_c_${id}')">
+    <select id="etx_c_${id}" style="font-size:13px;padding:5px 8px;flex-shrink:0;">
       ${['Food','Transport','Shopping','Health','Entertainment','Subscriptions','Other'].map(x=>`<option${x===t.category?' selected':''}>${x}</option>`).join('')}
     </select>
-    <input type="number" value="${t.amount}" id="etx_a_${id}" step="0.01" min="0" style="width:80px;font-size:12px;padding:4px 6px;text-align:right;flex-shrink:0;">
+    <input type="number" value="${t.amount}" id="etx_a_${id}" step="0.01" min="0" style="width:90px;font-size:13px;padding:5px 8px;text-align:right;flex-shrink:0;">
     <button class="btn btn-xs btn-green" onclick="saveEditTx('${id}')">✓</button>
     <button class="btn btn-xs" onclick="renderTracker()">✕</button>`;
   row.style.cssText='display:flex;align-items:center;gap:6px;padding:8px 12px;background:var(--bg3);border-bottom:1px solid var(--border);flex-wrap:wrap;';
-  ['etx_d_','etx_n_','etx_c_','etx_a_'].forEach(p=>{
+
+  const fields=['etx_d_','etx_n_','etx_c_','etx_a_'];
+  fields.forEach(p=>{
     const el=document.getElementById(p+id);
-    if(el){
-      el.addEventListener('keydown',e=>{ if(e.key==='Enter') saveEditTx(id); if(e.key==='Escape') renderTracker(); });
-      el.addEventListener('blur',()=>{ setTimeout(()=>{
-        // Only save if focus moved outside the edit row
-        const row=document.querySelector(`[data-txid="${id}"]`);
-        if(row && !row.contains(document.activeElement)) saveEditTx(id);
-      },150); });
-    }
+    if(!el) return;
+    // Enter saves
+    el.addEventListener('keydown',e=>{
+      if(e.key==='Enter'){ e.preventDefault(); saveEditTx(id); }
+      if(e.key==='Escape') renderTracker();
+    });
+    // Click-off saves: blur fires, check if focus went outside the row
+    el.addEventListener('blur',()=>{
+      setTimeout(()=>{
+        const r=document.querySelector(`[data-txid="${id}"]`);
+        if(r && !r.contains(document.activeElement)){
+          saveEditTx(id);
+        }
+      }, 150);
+    });
   });
+
   document.getElementById('etx_n_'+id)?.focus();
 }
+
 
 function renderAllPanels() {
   recalcRollover();        // recalcs rollover field in S but does NOT call saveState
