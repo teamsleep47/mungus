@@ -814,6 +814,41 @@ select option{background:var(--bg3);}
             </div>
           </div>
         </div>
+        <!-- Paycheck mode -->
+        <div class="card" id="paycheckCard" style="display:none;">
+          <div class="card-hdr">
+            <div class="card-title">Jobs</div>
+            <button class="btn btn-sm btn-green" onclick="addJob()">+ Add Job</button>
+          </div>
+          <div class="card-sub">Name each job and log paychecks as they arrive. Bi-weekly from two jobs = a check every week.</div>
+          <div id="jobsList"></div>
+        </div>
+
+        <div class="card" id="tipsCard" style="display:none;">
+          <div class="card-hdr">
+            <div class="card-title">Tips</div>
+            <button class="btn btn-sm btn-green" onclick="openLogTips()">+ Log Tips</button>
+          </div>
+          <div class="card-sub">Log cash tips after each shift. Tips are added to your spending pool and update your daily allowance.</div>
+          <div id="tipsLogList"></div>
+          <div id="tipsSummary" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:none;">
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+              <div>
+                <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:4px;">THIS WEEK</div>
+                <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--green);" id="tipsWeek">$0.00</div>
+              </div>
+              <div>
+                <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:4px;">THIS MONTH</div>
+                <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--green);" id="tipsMonth">$0.00</div>
+              </div>
+              <div>
+                <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:4px;">4-WK AVG</div>
+                <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--text2);" id="tipsAvg">$0.00</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Variable mode income log -->
         <div class="card" id="incomeLogCard" style="display:none;">
           <div class="card-hdr">
@@ -1043,7 +1078,7 @@ select option{background:var(--bg3);}
 // STATE
 // ════════════════════════════════════════════════════════════
 const DEF = {
-  income: { mode:'fixed', frequency:'weekly', primary:0, hourlyRate:0, weeklyHours:40, irregular:[], log:[] },
+  income: { mode:'fixed', frequency:'weekly', primary:0, hourlyRate:0, weeklyHours:40, irregular:[], log:[], jobs:[], tips:[] },
   bills: [],
   savings: { type:'percent', amount:10 },
   settings: { minBuffer:100, rollover:0 },
@@ -1097,6 +1132,181 @@ function toMonthly(amount,freq){
   return amount;
 }
 
+
+// ════════════════════════════════════════════════════════════
+// PAYCHECK MODE — Named Jobs + Tips
+// ════════════════════════════════════════════════════════════
+
+function addJob(){
+  if(!S.income.jobs) S.income.jobs=[];
+  const name=prompt('Job name (e.g. Walmart, McDonald's):');
+  if(!name||!name.trim()) return;
+  const freqStr=prompt('Pay frequency? (weekly/biweekly/monthly):') || 'biweekly';
+  const freq=['weekly','biweekly','monthly'].includes(freqStr.toLowerCase()) ? freqStr.toLowerCase() : 'biweekly';
+  const expectedStr=prompt('Expected check amount (optional, press Enter to skip):');
+  const expected=parseFloat(expectedStr)||0;
+  S.income.jobs.push({
+    id:Date.now().toString(),
+    name:name.trim(),
+    frequency:freq,
+    expected,
+    checks:[]
+  });
+  saveState(); renderJobsList(); renderIncomeView();
+}
+
+function removeJob(id){
+  if(!confirm('Remove this job and all its check history?')) return;
+  S.income.jobs=(S.income.jobs||[]).filter(j=>j.id!==id);
+  saveState(); renderJobsList(); renderIncomeView();
+}
+
+function logPaycheck(jobId){
+  const job=(S.income.jobs||[]).find(j=>j.id===jobId);
+  if(!job) return;
+  const amtStr=prompt(`Log paycheck for ${job.name} ($):`+(job.expected?` (expected ~$${job.expected.toFixed(2)})`:''));
+  const amount=parseFloat(amtStr);
+  if(!amount||isNaN(amount)) return;
+  if(!job.checks) job.checks=[];
+  job.checks.push({id:Date.now().toString(), amount, date:todayStr()});
+  saveState(); renderJobsList(); renderIncomeView(); renderDashboard();
+}
+
+function removeCheck(jobId, checkId){
+  const job=(S.income.jobs||[]).find(j=>j.id===jobId);
+  if(!job) return;
+  job.checks=(job.checks||[]).filter(c=>c.id!==checkId);
+  saveState(); renderJobsList(); renderIncomeView(); renderDashboard();
+}
+
+function renderJobsList(){
+  const el=document.getElementById('jobsList');
+  if(!el) return;
+  if(!S.income.jobs) S.income.jobs=[];
+  if(!S.income.jobs.length){
+    el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:8px 0;">No jobs added yet. Use "+ Add Job" to get started.</div>';
+    return;
+  }
+  const now=new Date();
+  const monthStr=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+
+  el.innerHTML=S.income.jobs.map(job=>{
+    const checks=job.checks||[];
+    const monthChecks=checks.filter(ch=>ch.date.startsWith(monthStr));
+    const monthTotal=monthChecks.reduce((s,c)=>s+c.amount,0);
+    const lastCheck=checks.sort((a,b)=>b.date.localeCompare(a.date))[0];
+    const freqLabel={weekly:'Weekly',biweekly:'Bi-weekly',monthly:'Monthly'}[job.frequency]||job.frequency;
+
+    return `<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius2);padding:14px;margin-bottom:12px;">
+      <!-- Job header -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div>
+          <div style="font-size:15px;font-weight:700;color:var(--text);">${job.name}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px;font-family:var(--mono);">${freqLabel}${job.expected?' · Expected ~'+fmt(job.expected):''}${lastCheck?' · Last: '+fmt(lastCheck.amount)+' on '+lastCheck.date:''}</div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <div style="text-align:right;margin-right:4px;">
+            <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green);">${fmt(monthTotal)}</div>
+            <div style="font-size:11px;color:var(--text3);">this month</div>
+          </div>
+          <button class="btn btn-sm btn-green" onclick="logPaycheck('${job.id}')">+ Check</button>
+          <button class="btn btn-sm btn-red" onclick="removeJob('${job.id}')">✕</button>
+        </div>
+      </div>
+      <!-- Recent checks -->
+      ${checks.length ? `<div style="border-top:1px solid var(--border);padding-top:8px;">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:6px;">RECENT CHECKS</div>
+        ${checks.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,4).map(ch=>`
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);">
+            <span style="font-family:var(--mono);font-size:12px;color:var(--text3);">${ch.date}</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--green);">+${fmt(ch.amount)}</span>
+              <button class="btn btn-xs btn-red" onclick="removeCheck('${job.id}','${ch.id}')">✕</button>
+            </div>
+          </div>`).join('')}
+        ${checks.length>4?`<div style="font-size:11px;color:var(--text3);margin-top:6px;">+${checks.length-4} older checks</div>`:''}
+      </div>` : '<div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:4px;">No checks logged yet.</div>'}
+    </div>`;
+  }).join('');
+}
+
+// ── Tips ─────────────────────────────────────────────────────
+function openLogTips(){
+  const amtStr=prompt('Tip amount to log ($):');
+  const amount=parseFloat(amtStr);
+  if(!amount||isNaN(amount)) return;
+  const noteStr=prompt('Note (optional — e.g. "Friday night shift"):') || '';
+  if(!S.income.tips) S.income.tips=[];
+  S.income.tips.push({id:Date.now().toString(), amount, date:todayStr(), note:noteStr.trim()});
+  saveState(); renderTipsList(); renderIncomeView(); renderDashboard();
+}
+
+function removeTip(id){
+  S.income.tips=(S.income.tips||[]).filter(t=>t.id!==id);
+  saveState(); renderTipsList(); renderIncomeView(); renderDashboard();
+}
+
+function renderTipsList(){
+  const el=document.getElementById('tipsLogList');
+  const sumEl=document.getElementById('tipsSummary');
+  if(!el) return;
+  if(!S.income.tips) S.income.tips=[];
+
+  const now=new Date();
+  const wkStart=new Date(now); wkStart.setDate(now.getDate()-now.getDay()); wkStart.setHours(0,0,0,0);
+  const moStr=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+
+  const wkTips=S.income.tips.filter(t=>new Date(t.date+'T00:00:00')>=wkStart);
+  const moTips=S.income.tips.filter(t=>t.date.startsWith(moStr));
+  const wkTotal=wkTips.reduce((s,t)=>s+t.amount,0);
+  const moTotal=moTips.reduce((s,t)=>s+t.amount,0);
+
+  // 4-week average
+  const fourWkAgo=new Date(now); fourWkAgo.setDate(now.getDate()-28);
+  const recent=S.income.tips.filter(t=>new Date(t.date+'T00:00:00')>=fourWkAgo);
+  // Group by week to get weekly avg
+  const wkGroups={};
+  recent.forEach(t=>{
+    const d=new Date(t.date+'T00:00:00');
+    const ws=new Date(d); ws.setDate(d.getDate()-d.getDay());
+    const wk=ws.toISOString().slice(0,10);
+    if(!wkGroups[wk]) wkGroups[wk]=0;
+    wkGroups[wk]+=t.amount;
+  });
+  const wkVals=Object.values(wkGroups);
+  const avg=wkVals.length ? wkVals.reduce((s,v)=>s+v,0)/wkVals.length : 0;
+
+  // Update summary
+  if(sumEl){
+    sumEl.style.display=S.income.tips.length?'block':'none';
+    const tw=document.getElementById('tipsWeek'); if(tw) tw.textContent=fmt(wkTotal);
+    const tm=document.getElementById('tipsMonth'); if(tm) tm.textContent=fmt(moTotal);
+    const ta=document.getElementById('tipsAvg'); if(ta) ta.textContent=fmt(avg)+'/wk';
+  }
+
+  if(!S.income.tips.length){
+    el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:8px 0;">No tips logged yet. Log after each shift.</div>';
+    return;
+  }
+
+  const recent10=S.income.tips.slice().sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id)).slice(0,10);
+  el.innerHTML=`<div style="border-top:1px solid var(--border);padding-top:8px;margin-top:4px;">
+    <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:6px;">RECENT ENTRIES</div>
+    ${recent10.map(t=>`
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);">
+        <div>
+          <span style="font-family:var(--mono);font-size:12px;color:var(--text3);">${t.date}</span>
+          ${t.note?`<span style="font-size:12px;color:var(--text2);margin-left:8px;">${t.note}</span>`:''}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green);">+${fmt(t.amount)}</span>
+          <button class="btn btn-xs btn-red" onclick="removeTip('${t.id}')">✕</button>
+        </div>
+      </div>`).join('')}
+    ${S.income.tips.length>10?`<div style="font-size:11px;color:var(--text3);margin-top:6px;">+${S.income.tips.length-10} older entries</div>`:''}
+  </div>`;
+}
+
 function calcMonthlyIncome(){
   const im = S.income;
   let base = 0;
@@ -1104,6 +1314,15 @@ function calcMonthlyIncome(){
     base = toMonthly(im.primary||0, im.frequency||'weekly');
   } else if(im.mode==='hourly'){
     base = (im.hourlyRate||0)*(im.weeklyHours||0)*52/12;
+  } else if(im.mode==='paycheck'){
+    // paycheck — sum all paychecks + tips this month
+    const now=new Date(); const y=now.getFullYear(),m=now.getMonth();
+    const monthStr=`${y}-${String(m+1).padStart(2,'0')}`;
+    const checkTotal=(S.income.jobs||[]).reduce((s,job)=>{
+      return s+(job.checks||[]).filter(ch=>ch.date.startsWith(monthStr)).reduce((ss,ch)=>ss+ch.amount,0);
+    },0);
+    const tipTotal=(S.income.tips||[]).filter(t=>t.date.startsWith(monthStr)).reduce((s,t)=>s+t.amount,0);
+    base=checkTotal+tipTotal;
   } else {
     // variable — sum income log for current month
     const now=new Date(); const y=now.getFullYear(),m=now.getMonth();
@@ -1636,6 +1855,7 @@ const MODES=[
   {id:'fixed',ico:'📅',title:'Fixed',desc:'Regular paycheck on a weekly or monthly schedule.'},
   {id:'hourly',ico:'⏱',title:'Hourly',desc:'Set your rate and expected hours to project income.'},
   {id:'variable',ico:'📊',title:'Variable',desc:'Log actual income as it arrives. Allowance adjusts in real time.'},
+  {id:'paycheck',ico:'💵',title:'Paycheck',desc:'Multiple jobs with named paychecks + tip tracking. Best for shift workers.'},
 ];
 
 function renderIncomeView(){
@@ -1683,12 +1903,15 @@ function renderIncomeView(){
   document.getElementById('incMonthlyEq').textContent=fmt(eq);
   const yr=document.getElementById('incYearlyEq'); if(yr) yr.textContent=fmt(eq*12);
   const f5=document.getElementById('inc5yrEq'); if(f5) f5.textContent=fmt(eq*12*5);
-  const notes={fixed:'Primary + additional income per month',hourly:`${S.income.hourlyRate||0}/hr × ${S.income.weeklyHours||0} hrs/wk × 52÷12`,variable:'Sum of income logged this calendar month'};
+  const notes={fixed:'Primary + additional income per month',hourly:`${S.income.hourlyRate||0}/hr × ${S.income.weeklyHours||0} hrs/wk × 52÷12`,variable:'Sum of income logged this calendar month',paycheck:'All paychecks + tips logged this calendar month'};
   document.getElementById('incMonthlyNote').textContent=notes[S.income.mode]||'';
 
-  // Income log card
+  // Show/hide mode-specific cards
   document.getElementById('incomeLogCard').style.display=S.income.mode==='variable'?'block':'none';
-  renderIncomeLog();
+  document.getElementById('paycheckCard').style.display=S.income.mode==='paycheck'?'block':'none';
+  document.getElementById('tipsCard').style.display=S.income.mode==='paycheck'?'block':'none';
+  if(S.income.mode==='variable') renderIncomeLog();
+  if(S.income.mode==='paycheck'){ renderJobsList(); renderTipsList(); }
 }
 
 function setIncMode(mode){
