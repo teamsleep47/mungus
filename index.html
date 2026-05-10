@@ -1139,7 +1139,7 @@ function toMonthly(amount,freq){
 
 function addJob(){
   if(!S.income.jobs) S.income.jobs=[];
-  const name=prompt('Job name (e.g. Walmart, McDonald's):');
+  const name=prompt('Job name (e.g. Walmart, McDonalds):');
   if(!name||!name.trim()) return;
   const freqStr=prompt('Pay frequency? (weekly/biweekly/monthly):') || 'biweekly';
   const freq=['weekly','biweekly','monthly'].includes(freqStr.toLowerCase()) ? freqStr.toLowerCase() : 'biweekly';
