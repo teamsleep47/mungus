@@ -1653,17 +1653,7 @@ function renderPaycheckDash(){
     return s+b.amount;
   },0);
 
-  // Which job covers this week
-  const jobs=S.income.jobs||[];
-  let weekAssign=[null,null,null,null];
-  let wk=0;
-  jobs.forEach(j=>{
-    const checksPerMo=j.frequency==='weekly'?4:j.frequency==='monthly'?1:2;
-    for(let i=0;i<checksPerMo;i++){
-      if(wk<4){ weekAssign[wk]=j; wk++; }
-    }
-  });
-  const thisWeekJob = weekAssign[weekOfMonth-1];
+  // thisWeekJob already found above via getJobCheckDates
 
   // Expected check this week
   const expectedCheck = thisWeekJob ? (thisWeekJob.expected||0) : (income/cpm);
