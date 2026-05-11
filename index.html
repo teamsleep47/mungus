@@ -933,17 +933,49 @@ select option{background:var(--bg3);}
         <div class="card">
           <div class="card-hdr"><div class="card-title">Savings Goal</div></div>
           <div class="card-sub">Deducted after bills, before spending. Fully locked — never touched by rollover.</div>
-          <div class="form-row" style="margin-bottom:14px;">
-            <div class="fg" style="flex:0;min-width:160px;"><label>Type</label><div class="seg" id="savTypeSeg"><div class="seg-btn active" onclick="setSavType('percent')">% Income</div><div class="seg-btn" onclick="setSavType('fixed')">Fixed $</div></div></div>
-            <div class="fg"><label id="savAmtLabel">Percentage (%)</label><input type="number" id="sav_val" placeholder="10" step="0.5" min="0" onchange="saveSavings()" onfocus="this.select()"></div>
-            <div class="fg" style="flex:0;min-width:70px;"><label>&nbsp;</label><button class="btn btn-green" onclick="saveSavings()">Save</button></div>
+
+          <!-- Standard mode: percent or fixed monthly -->
+          <div id="savStandardForm">
+            <div class="form-row" style="margin-bottom:14px;">
+              <div class="fg" style="flex:0;min-width:160px;"><label>Type</label><div class="seg" id="savTypeSeg"><div class="seg-btn active" onclick="setSavType('percent')">% Income</div><div class="seg-btn" onclick="setSavType('fixed')">Fixed $</div></div></div>
+              <div class="fg"><label id="savAmtLabel">Percentage (%)</label><input type="number" id="sav_val" placeholder="10" step="0.5" min="0" onchange="saveSavings()" onfocus="this.select()" onkeydown="if(event.key==='Enter')saveSavings()"></div>
+              <div class="fg" style="flex:0;min-width:70px;"><label>&nbsp;</label><button class="btn btn-green" onclick="saveSavings()">Save</button></div>
+            </div>
+          </div>
+
+          <!-- Paycheck mode: weekly / per-check / percent -->
+          <div id="savPaycheckForm" style="display:none;">
+            <div style="font-family:var(--mono);font-size:11px;color:var(--text3);letter-spacing:.06em;margin-bottom:10px;">HOW DO YOU WANT TO THINK ABOUT SAVINGS?</div>
+            <div class="form-row" style="margin-bottom:14px;">
+              <div class="fg" style="flex:0;min-width:200px;">
+                <label>Savings Type</label>
+                <select id="savPaycheckType" onchange="onSavPaycheckTypeChange()">
+                  <option value="weekly">Weekly amount ($)</option>
+                  <option value="percheck">Per check ($)</option>
+                  <option value="percent">Percentage of check (%)</option>
+                </select>
+              </div>
+              <div class="fg">
+                <label id="savPaycheckAmtLabel">Amount per week ($)</label>
+                <input type="number" id="savPaycheckAmt" placeholder="0.00" step="0.01" min="0"
+                  oninput="updateSavPaycheckConversion()"
+                  onchange="saveSavingsPaycheck()"
+                  onkeydown="if(event.key==='Enter')saveSavingsPaycheck()"
+                  onfocus="this.select()">
+              </div>
+              <div class="fg" style="flex:0;min-width:70px;">
+                <label>&nbsp;</label>
+                <button class="btn btn-green" onclick="saveSavingsPaycheck()">Save</button>
+              </div>
+            </div>
+            <div style="padding:10px 14px;background:var(--bg3);border-radius:var(--radius);font-size:13px;color:var(--text2);border:1px solid var(--border2);" id="savPaycheckConversion"></div>
           </div>
           <div style="padding:14px;background:var(--bg3);border-radius:var(--radius);">
-            <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:6px;">MONTHLY SAVINGS</div>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:6px;" id="savingsDisplayLabel">MONTHLY SAVINGS</div>
             <div style="font-family:var(--mono);font-size:24px;font-weight:700;color:var(--blue);" id="savingsDisplay">$0.00</div>
           <div style="display:flex;gap:20px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border2);">
             <div>
-              <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:4px;">YEARLY</div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:4px;" id="savingsYearlyLabel">YEARLY</div>
               <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--blue);" id="savingsYearly">$0.00</div>
             </div>
             <div>
@@ -2755,22 +2787,117 @@ function cancelEditGoal(i){
   document.getElementById('goal-edit-'+i).style.display='none';
 }
 
+
+// ── Paycheck savings helpers ──────────────────────────────────
+function onSavPaycheckTypeChange(){
+  const t=document.getElementById('savPaycheckType')?.value||'weekly';
+  const lbl=document.getElementById('savPaycheckAmtLabel');
+  if(lbl) lbl.textContent=t==='weekly'?'Amount per week ($)':t==='percheck'?'Amount per check ($)':'Percentage of check (%)';
+  updateSavPaycheckConversion();
+}
+
+function updateSavPaycheckConversion(){
+  const el=document.getElementById('savPaycheckConversion');
+  if(!el) return;
+  const t=document.getElementById('savPaycheckType')?.value||'weekly';
+  const amt=parseFloat(document.getElementById('savPaycheckAmt')?.value)||0;
+  if(!amt){ el.textContent=''; return; }
+  const cpm=checksPerMonth()||2;
+  const income=calcMonthlyIncome();
+  let monthly=0, weekly=0, perCheck=0;
+  if(t==='weekly'){
+    weekly=amt; monthly=amt*4.33; perCheck=monthly/cpm;
+  } else if(t==='percheck'){
+    perCheck=amt; monthly=amt*cpm; weekly=monthly/4.33;
+  } else {
+    // percent
+    const weeklyInc=(()=>{
+      return (S.income.jobs||[]).reduce((s,j)=>{
+        let pc=j.expected||0;
+        if(!pc){const ch=j.checks||[];if(ch.length)pc=ch.reduce((ss,c)=>ss+c.amount,0)/ch.length;}
+        return s+(j.frequency==='weekly'?pc:j.frequency==='monthly'?pc/4.33:pc/2);
+      },0);
+    })();
+    weekly=weeklyInc*(amt/100); monthly=weekly*4.33; perCheck=monthly/cpm;
+  }
+  el.innerHTML=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+    <div><div style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-bottom:3px;">WEEKLY</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--blue);">${fmt(weekly)}</div></div>
+    <div><div style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-bottom:3px;">PER CHECK</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--blue);">${fmt(perCheck)}</div></div>
+    <div><div style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-bottom:3px;">YEARLY</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--blue);">${fmt(monthly*12)}</div></div>
+  </div>`;
+}
+
+function saveSavingsPaycheck(){
+  const t=document.getElementById('savPaycheckType')?.value||'weekly';
+  const amt=parseFloat(document.getElementById('savPaycheckAmt')?.value)||0;
+  const cpm=checksPerMonth()||2;
+  // Convert to monthly fixed amount for internal storage
+  let monthly=0;
+  if(t==='weekly') monthly=amt*4.33;
+  else if(t==='percheck') monthly=amt*cpm;
+  else {
+    // percent — store as percent type
+    S.savings.type='percent';
+    S.savings.amount=amt;
+    S.savings.paycheckType=t;
+    S.savings.paycheckAmt=amt;
+    saveState(); renderSavingsView(); renderDashboard(); return;
+  }
+  S.savings.type='fixed';
+  S.savings.amount=parseFloat(monthly.toFixed(2));
+  S.savings.paycheckType=t;
+  S.savings.paycheckAmt=amt;
+  saveState(); renderSavingsView(); renderDashboard();
+}
+
 function renderSavingsView(){
   if(!S.savingsGoals) S.savingsGoals=[];
-  document.getElementById('sav_val').value=S.savings.amount||0;
-  const _sm=calcSavings(calcMonthlyIncome());
-  document.getElementById('savingsDisplay').textContent=fmt(_sm);
-  const _syr=document.getElementById('savingsYearly'); if(_syr) _syr.textContent=fmt(_sm*12);
-  const _s5=document.getElementById('savings5yr'); if(_s5) _s5.textContent=fmt(_sm*12*5);
+  const paycheck = isPaycheckMode();
+  const cpm = checksPerMonth()||2;
+
+  // Show correct form
+  const stdForm = document.getElementById('savStandardForm');
+  const pcForm  = document.getElementById('savPaycheckForm');
+  if(stdForm) stdForm.style.display = paycheck ? 'none' : 'block';
+  if(pcForm)  pcForm.style.display  = paycheck ? 'block' : 'none';
+
+  if(paycheck){
+    // Restore paycheck form values
+    const pt = S.savings.paycheckType||'weekly';
+    const pa = S.savings.paycheckAmt||0;
+    const ptEl = document.getElementById('savPaycheckType');
+    const paEl = document.getElementById('savPaycheckAmt');
+    if(ptEl) ptEl.value = pt;
+    if(paEl) paEl.value = pa||'';
+    onSavPaycheckTypeChange();
+    if(pa) updateSavPaycheckConversion();
+  } else {
+    document.getElementById('sav_val').value = S.savings.amount||0;
+    setSavType(S.savings.type);
+  }
+
+  // Display: show weekly in paycheck mode, monthly otherwise
+  const _sm = calcSavings(calcMonthlyIncome());
+  const _sw = _sm / 4.33;
+  const lbl = document.getElementById('savingsDisplayLabel');
+  const disp = document.getElementById('savingsDisplay');
+  if(lbl) lbl.textContent = paycheck ? 'WEEKLY SAVINGS' : 'MONTHLY SAVINGS';
+  if(disp) disp.textContent = paycheck ? fmt(_sw) : fmt(_sm);
+
+  const _syr=document.getElementById('savingsYearly');
+  const _s5=document.getElementById('savings5yr');
+  if(_syr) _syr.textContent=fmt(_sm*12);
+  if(_s5)  _s5.textContent=fmt(_sm*12*5);
+
   const _spc=document.getElementById('savingsPerCheck');
   const _spcw=document.getElementById('savingsPerCheckWrap');
   if(_spc&&_spcw){
-    if(isPaycheckMode()&&checksPerMonth()>0){
-      _spc.textContent=fmt(_sm/checksPerMonth());
+    if(paycheck&&cpm>0){
+      _spc.textContent=fmt(_sm/cpm);
       _spcw.style.display='';
     } else { _spcw.style.display='none'; }
   }
-  setSavType(S.savings.type);
+
   document.getElementById('bufferVal').value=S.settings.minBuffer||100;
   renderSavingsGoals();
 }
