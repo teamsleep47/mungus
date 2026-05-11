@@ -1271,10 +1271,11 @@ function calcWeeklyFund(){
         return s+b.amount/cpm;
       },0);
 
-    // Savings: percent of weekly income or fixed divided by checks/month
+    // Savings: percent of weekly income, or fixed amount divided by 4.33 weeks/month
+    // (NOT divided by checks — savings is a monthly target independent of check count)
     const weeklySavings = S.savings.type==='percent'
       ? totalWeeklyIn*(S.savings.amount/100)
-      : (S.savings.amount||0)/cpm;
+      : (S.savings.amount||0)/4.33;
 
     return Math.max(0, totalWeeklyIn - thisCheckBills - unassignedBills - weeklySavings);
   }
