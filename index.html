@@ -912,7 +912,13 @@ select option{background:var(--bg3);}
           <div class="form-row" style="margin-bottom:14px;">
             <div class="fg"><label>Frequency</label><select id="bf_freq"><option value="monthly">Monthly</option><option value="weekly">Weekly</option><option value="yearly">Yearly</option></select></div>
             <div class="fg"><label>Due (day of month)</label><input type="number" id="bf_due" placeholder="1–31" min="1" max="31" onfocus="this.select()"></div>
-            <div class="fg" id="bf_check_slot_wrap" style="display:none;"><label>Assigned Check</label><select id="bf_check_slot"><option value="">Unassigned</option></select></div>
+            <div id="bf_check_slot_wrap" style="display:none;width:100%;margin-top:12px;padding:12px;background:var(--bg3);border-radius:var(--radius);border:1px solid var(--border2);">
+              <div style="font-family:var(--mono);font-size:11px;color:var(--text3);letter-spacing:.06em;margin-bottom:8px;">WHICH CHECK PAYS THIS BILL?</div>
+              <div style="font-size:13px;color:var(--text2);margin-bottom:10px;">Assign this bill to a specific paycheck. That check will show the full bill amount as a deduction. Unassigned bills are split evenly across all checks.</div>
+              <select id="bf_check_slot" style="width:100%;font-size:14px;padding:10px 12px;">
+                <option value="">Unassigned (split evenly across checks)</option>
+              </select>
+            </div>
             <div class="fg"><label>Category</label><select id="bf_cat"><option>Housing</option><option>Utilities</option><option>Subscriptions</option><option>Insurance</option><option>Transport</option><option>Health</option><option>Other</option></select></div>
           </div>
           <div style="display:flex;gap:8px;">
@@ -1223,58 +1229,67 @@ function getNextCheckDate(job){
 }
 
 function calcWeeklyFund(){
-  // Bills as weekly equivalent
-  const weeklyBills = S.bills.reduce((s,b)=>{
-    if(b.frequency==='monthly')  return s+b.amount/4.33;
-    if(b.frequency==='weekly')   return s+b.amount;
-    if(b.frequency==='yearly')   return s+b.amount/52;
-    return s+b.amount/4.33;
-  },0);
-
   if(isPaycheckMode()){
-    const jobs=S.income.jobs||[];
-
-    // Weekly income: use expected if set, otherwise derive from actual check history
+    // Get expected weekly income from jobs
+    const jobs = S.income.jobs||[];
     const weeklyIncome = jobs.reduce((s,j)=>{
-      // Priority 1: user-set expected amount
-      if(j.expected && j.expected>0){
-        if(j.frequency==='weekly')   return s+j.expected;
-        if(j.frequency==='biweekly') return s+j.expected/2;
-        if(j.frequency==='monthly')  return s+j.expected/4.33;
-        return s+j.expected/2;
+      // Use expected if set, else average of logged checks
+      let perCheck = j.expected||0;
+      if(!perCheck){
+        const checks=j.checks||[];
+        if(checks.length) perCheck=checks.reduce((ss,ch)=>ss+ch.amount,0)/checks.length;
       }
-      // Priority 2: derive from actual checks logged (average per interval)
-      const checks=j.checks||[];
-      if(checks.length>0){
-        const avgCheck=checks.reduce((ss,ch)=>ss+ch.amount,0)/checks.length;
-        if(j.frequency==='weekly')   return s+avgCheck;
-        if(j.frequency==='biweekly') return s+avgCheck/2;
-        if(j.frequency==='monthly')  return s+avgCheck/4.33;
-        return s+avgCheck/2;
-      }
-      return s;
+      if(j.frequency==='weekly')   return s+perCheck;
+      if(j.frequency==='biweekly') return s+perCheck/2;
+      if(j.frequency==='monthly')  return s+perCheck/4.33;
+      return s+perCheck/2;
     },0);
 
     // Average weekly tips (4-week rolling)
     const now=new Date();
     const fourWkAgo=new Date(now); fourWkAgo.setDate(now.getDate()-28);
-    const recentTips=(S.income.tips||[]).filter(t=>new Date(t.date+'T00:00:00')>=fourWkAgo);
-    const avgWkTips=recentTips.length ? recentTips.reduce((s,t)=>s+t.amount,0)/4 : 0;
+    const avgWkTips=(S.income.tips||[]).filter(t=>new Date(t.date+'T00:00:00')>=fourWkAgo)
+      .reduce((s,t)=>s+t.amount,0)/4;
+
     const totalWeeklyIn = weeklyIncome + avgWkTips;
 
-    // Savings: fixed amount divided weekly, percent of weekly income
+    // Bills assigned to THIS week's check slot — subtracted in full (not divided)
+    const weekOfMonth = Math.ceil(now.getDate()/7);
+    const weekSlot = 'week_'+weekOfMonth;
+    const thisCheckBills = S.bills
+      .filter(b=>b.checkSlot===weekSlot)
+      .reduce((s,b)=>s+b.amount,0);
+
+    // Unassigned bills divided evenly across all checks
+    const cpm = checksPerMonth()||1;
+    const unassignedBills = S.bills
+      .filter(b=>!b.checkSlot)
+      .reduce((s,b)=>{
+        if(b.frequency==='monthly')  return s+b.amount/cpm;
+        if(b.frequency==='weekly')   return s+b.amount;
+        if(b.frequency==='yearly')   return s+(b.amount/12)/cpm;
+        return s+b.amount/cpm;
+      },0);
+
+    // Savings: percent of weekly income or fixed divided by checks/month
     const weeklySavings = S.savings.type==='percent'
-      ? totalWeeklyIn * (S.savings.amount/100)
-      : (S.savings.amount||0) / 4.33;
+      ? totalWeeklyIn*(S.savings.amount/100)
+      : (S.savings.amount||0)/cpm;
 
-    return Math.max(0, totalWeeklyIn - weeklyBills - weeklySavings);
+    return Math.max(0, totalWeeklyIn - thisCheckBills - unassignedBills - weeklySavings);
   }
-
-  // Non-paycheck modes: monthly ÷ 4.33
+  // Non-paycheck: monthly ÷ 4.33
   const monthly=calcMonthlyIncome();
-  const monthlySavings=calcSavings(monthly);
-  return Math.max(0,(monthly/4.33) - weeklyBills - (monthlySavings/4.33));
+  const weeklyBills=S.bills.reduce((s,b)=>{
+    if(b.frequency==='monthly') return s+b.amount/4.33;
+    if(b.frequency==='weekly')  return s+b.amount;
+    if(b.frequency==='yearly')  return s+b.amount/52;
+    return s+b.amount/4.33;
+  },0);
+  const weeklySavings=calcSavings(monthly)/4.33;
+  return Math.max(0,(monthly/4.33)-weeklyBills-weeklySavings);
 }
+
 
 // Per-check bill share
 function billsPerCheck(){
@@ -1295,7 +1310,7 @@ function updateCheckSlotOptions(){
   const sel=document.getElementById('bf_check_slot');
   if(!wrap||!sel) return;
   if(!isPaycheckMode()){ wrap.style.display='none'; return; }
-  wrap.style.display='';
+  wrap.style.display='block';
   const jobs=S.income.jobs||[];
   const options=['<option value="">Unassigned</option>'];
   const now = new Date();
@@ -1644,88 +1659,122 @@ function renderPaycheckDash(){
   if(!el) return;
   if(!isPaycheckMode()){ el.innerHTML=''; return; }
 
-  const income = calcMonthlyIncome();
-  const cpm    = checksPerMonth()||1;
-  const bpc    = billsPerCheck();
-  const spc    = calcSavings(income) / cpm;
-
-  const now=new Date();
+  const now = new Date();
   const weekOfMonth = Math.ceil(now.getDate()/7);
-  const weekSlot = `week_${weekOfMonth}`;
-  const todayStr_=todayStr();
-  const sevenFwd=new Date(now); sevenFwd.setDate(now.getDate()+7);
-  const sevenFwdStr=sevenFwd.getFullYear()+'-'+String(sevenFwd.getMonth()+1).padStart(2,'0')+'-'+String(sevenFwd.getDate()).padStart(2,'0');
+  const weekSlot = 'week_'+weekOfMonth;
+  const cpm = checksPerMonth()||1;
 
-  // Find which job has a check this week (rolling 7-day window)
+  // Find which job has a check this week
+  const todayStr_=todayStr();
   const sevenDaysAgo=new Date(now); sevenDaysAgo.setDate(now.getDate()-6);
-  const weekCutoff=sevenDaysAgo.getFullYear()+'-'+String(sevenDaysAgo.getMonth()+1).padStart(2,'0')+'-'+String(sevenDaysAgo.getDate()).padStart(2,'0');
+  const cutoff=sevenDaysAgo.getFullYear()+'-'+String(sevenDaysAgo.getMonth()+1).padStart(2,'0')+'-'+String(sevenDaysAgo.getDate()).padStart(2,'0');
   let thisWeekJob=null;
   (S.income.jobs||[]).forEach(j=>{
     const dates=j.nextCheckDate?getJobCheckDates(j,0.5):[];
-    if(dates.some(d=>d>=weekCutoff&&d<=todayStr_)) thisWeekJob=j;
+    if(dates.some(d=>d>=cutoff&&d<=todayStr_)) thisWeekJob=j;
   });
 
-  // Bills assigned to THIS week's check slot
-  const thisWeekBills = S.bills.filter(b=>b.checkSlot===weekSlot);
-  const thisWeekBillTotal = thisWeekBills.reduce((s,b)=>{
-    if(b.frequency==='monthly') return s+b.amount;
-    if(b.frequency==='weekly')  return s+b.amount;
-    return s+b.amount;
+  // Expected check amount this week
+  const jobs=S.income.jobs||[];
+  const weeklyIncome=jobs.reduce((s,j)=>{
+    let perCheck=j.expected||0;
+    if(!perCheck){ const ch=j.checks||[]; if(ch.length) perCheck=ch.reduce((ss,c)=>ss+c.amount,0)/ch.length; }
+    if(j.frequency==='weekly')   return s+perCheck;
+    if(j.frequency==='biweekly') return s+perCheck/2;
+    if(j.frequency==='monthly')  return s+perCheck/4.33;
+    return s+perCheck/2;
+  },0);
+  const expectedCheck = thisWeekJob
+    ? (thisWeekJob.expected || (()=>{const ch=thisWeekJob.checks||[];return ch.length?ch.reduce((s,c)=>s+c.amount,0)/ch.length:0;})())
+    : weeklyIncome;
+
+  // Bills assigned to this week's check — full amount
+  const assignedBills = S.bills.filter(b=>b.checkSlot===weekSlot);
+  const assignedTotal = assignedBills.reduce((s,b)=>s+b.amount,0);
+
+  // Unassigned bills — divided by checks
+  const unassignedBills = S.bills.filter(b=>!b.checkSlot);
+  const unassignedTotal = unassignedBills.reduce((s,b)=>{
+    if(b.frequency==='monthly')  return s+b.amount/cpm;
+    if(b.frequency==='weekly')   return s+b.amount;
+    if(b.frequency==='yearly')   return s+(b.amount/12)/cpm;
+    return s+b.amount/cpm;
   },0);
 
-  // thisWeekJob already found above via getJobCheckDates
+  // Savings per check
+  const income=calcMonthlyIncome();
+  const savPerCheck = S.savings.type==='percent'
+    ? weeklyIncome*(S.savings.amount/100)
+    : (S.savings.amount||0)/cpm;
 
-  // Expected check this week
-  const expectedCheck = thisWeekJob ? (thisWeekJob.expected||0) : (income/cpm);
-  const spendable = Math.max(0, expectedCheck - thisWeekBillTotal - spc);
+  const totalDeductions = assignedTotal + unassignedTotal + savPerCheck;
+  const spendable = expectedCheck - totalDeductions;
 
-  // This week actual income
-  const wkStart=new Date(now); wkStart.setDate(now.getDate()-now.getDay()); wkStart.setHours(0,0,0,0);
-  const wkStr=wkStart.toISOString().slice(0,10);
-  const wkChecks=(S.income.jobs||[]).reduce((s,j)=>(j.checks||[]).filter(ch=>ch.date>=wkStr).reduce((ss,ch)=>ss+ch.amount,s),0);
-  const wkTips=(S.income.tips||[]).filter(t=>t.date>=wkStr).reduce((s,t)=>s+t.amount,0);
+  // Received this week
+  const wkChecks=(S.income.jobs||[]).reduce((s,j)=>(j.checks||[]).filter(ch=>ch.date>=cutoff).reduce((ss,ch)=>ss+ch.amount,s),0);
+  const wkTips=(S.income.tips||[]).filter(t=>t.date>=cutoff).reduce((s,t)=>s+t.amount,0);
   const wkIn=wkChecks+wkTips;
 
   el.innerHTML=`<div class="card">
     <div class="card-hdr">
-      <div class="card-title">Week ${weekOfMonth} of Month${thisWeekJob?` — ${thisWeekJob.name} check`:''}</div>
+      <div class="card-title">Week ${weekOfMonth}${thisWeekJob?' — '+thisWeekJob.name+' check':''}</div>
       <span style="font-family:var(--mono);font-size:11px;color:var(--text3);">${cpm} checks/month</span>
     </div>
-    <div style="background:var(--bg3);border-radius:var(--radius);padding:14px;margin-top:10px;border:1px solid var(--border2);">
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);">
-        <span style="font-size:14px;color:var(--text2);">Expected check${thisWeekJob?' ('+thisWeekJob.name+')':''}</span>
-        <span style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--green);">~${fmt(expectedCheck)}</span>
+
+    <!-- Check breakdown -->
+    <div style="background:var(--bg3);border-radius:var(--radius);padding:14px;margin-top:12px;border:1px solid var(--border2);">
+
+      <!-- Expected check -->
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+        <span style="font-size:14px;font-weight:600;">${thisWeekJob?thisWeekJob.name+' check':'Expected check'}</span>
+        <span style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--green);">+${fmt(expectedCheck)}</span>
       </div>
-      ${thisWeekBills.length?`
-      <div style="padding:7px 0;border-bottom:1px solid var(--border);">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <span style="font-size:14px;color:var(--text2);">Bills this check</span>
-          <span style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--red);">−${fmt(thisWeekBillTotal)}</span>
+
+      <!-- Assigned bills (full amount each) -->
+      ${assignedBills.length ? `
+      <div style="padding:6px 0;border-bottom:1px solid var(--border);">
+        <div style="display:flex;justify-content:space-between;color:var(--red);font-size:13px;font-weight:600;padding:2px 0;">
+          <span>Bills this check</span><span style="font-family:var(--mono);">−${fmt(assignedTotal)}</span>
         </div>
-        ${thisWeekBills.map(b=>`<div style="display:flex;justify-content:space-between;padding:3px 0 0 12px;font-size:12px;color:var(--text3);">
-          <span>${b.name}</span><span style="font-family:var(--mono);">−${fmt(b.amount)}</span>
+        ${assignedBills.map(b=>`<div style="display:flex;justify-content:space-between;padding:3px 0 0 12px;font-size:12px;color:var(--text2);">
+          <span>${b.name}</span><span style="font-family:var(--mono);color:var(--red);">−${fmt(b.amount)}</span>
         </div>`).join('')}
-      </div>`:`
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);">
-        <span style="font-size:14px;color:var(--text2);">Bills this check</span>
-        <span style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--text3);">None assigned</span>
-      </div>`}
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);">
-        <span style="font-size:14px;color:var(--text2);">Savings reserve</span>
-        <span style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--blue);">−${fmt(spc)}</span>
+      </div>` : ''}
+
+      <!-- Unassigned bills (auto-split) -->
+      ${unassignedBills.length ? `
+      <div style="padding:6px 0;border-bottom:1px solid var(--border);">
+        <div style="display:flex;justify-content:space-between;color:var(--text3);font-size:12px;padding:2px 0;">
+          <span>Unassigned bills (÷${cpm} checks)</span><span style="font-family:var(--mono);">−${fmt(unassignedTotal)}</span>
+        </div>
+        <div style="font-size:11px;color:var(--text3);padding:2px 0 0 12px;">Assign bills to specific checks for accurate tracking →</div>
+      </div>` : ''}
+
+      <!-- Savings -->
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+        <span style="font-size:13px;color:var(--text2);">Savings reserve</span>
+        <span style="font-family:var(--mono);font-size:14px;color:var(--blue);">−${fmt(savPerCheck)}</span>
       </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0 2px 0;">
+
+      <!-- Spendable -->
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0 2px;">
         <span style="font-size:15px;font-weight:700;">Spendable this check</span>
-        <span style="font-family:var(--mono);font-size:20px;font-weight:700;color:${spendable<=0?'var(--red)':'var(--green)'};">${fmt(spendable)}</span>
+        <span style="font-family:var(--mono);font-size:22px;font-weight:700;color:${spendable<0?'var(--red)':'var(--green)'};">${spendable<0?'−':''}${fmt(Math.abs(spendable))}</span>
       </div>
+      ${spendable<0?`<div style="font-size:12px;color:var(--red);margin-top:4px;">Bills exceed this check — remaining covered by next check.</div>`:''}
     </div>
+
     ${wkIn>0?`<div style="margin-top:10px;padding:10px 14px;background:var(--gdim);border:1px solid var(--green2);border-radius:var(--radius);display:flex;justify-content:space-between;align-items:center;">
-      <span style="font-size:13px;color:var(--text2);">Received this week</span>
+      <span style="font-size:13px;color:var(--text2);">Received in last 7 days</span>
       <span style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--green);">+${fmt(wkIn)}</span>
     </div>`:''}
-    <div style="margin-top:8px;font-size:11px;color:var(--text3);">Assign bills to check slots in the Bills tab to see exact per-check breakdown.</div>
+
+    ${!assignedBills.length&&S.bills.length?`<div style="margin-top:8px;padding:10px;background:var(--ydim);border:1px solid var(--yellow);border-radius:var(--radius);font-size:12px;color:var(--text2);">
+      💡 Tip: Assign bills to specific checks in the <strong>Bills tab</strong> to see an exact breakdown here.
+    </div>`:''}
   </div>`;
 }
+
 
 function calcMonthlyIncome(){
   const im = S.income;
@@ -2493,7 +2542,7 @@ function removeIncEntry(id){ S.income.log=S.income.log.filter(e=>e.id!==id); sav
 // ════════════════════════════════════════════════════════════
 // BILLS
 // ════════════════════════════════════════════════════════════
-function openBillForm(){ editBillId=null; document.getElementById('billFormTitle').textContent='Add Bill'; ['bf_name','bf_amount','bf_due'].forEach(id=>document.getElementById(id).value=''); document.getElementById('bf_freq').value='monthly'; document.getElementById('bf_cat').value='Housing'; document.getElementById('billFormCard').style.display='block'; }
+function openBillForm(){ editBillId=null; document.getElementById('billFormTitle').textContent='Add Bill'; ['bf_name','bf_amount','bf_due'].forEach(id=>document.getElementById(id).value=''); document.getElementById('bf_freq').value='monthly'; document.getElementById('bf_cat').value='Housing'; document.getElementById('billFormCard').style.display='block'; updateCheckSlotOptions(); document.getElementById('bf_name')?.focus(); }
 function openEditBill(id){
   const b=S.bills.find(x=>x.id===id); if(!b) return;
   editBillId=id; document.getElementById('billFormTitle').textContent='Edit Bill';
@@ -2501,7 +2550,7 @@ function openEditBill(id){
   document.getElementById('bf_freq').value=b.frequency; document.getElementById('bf_due').value=b.due;
   document.getElementById('bf_cat').value=b.category||'Other';
   updateCheckSlotOptions();
-  const cs=document.getElementById('bf_check_slot'); if(cs) cs.value=b.checkSlot||'';
+  updateCheckSlotOptions(); const cs=document.getElementById('bf_check_slot'); if(cs) cs.value=b.checkSlot||'';
   document.getElementById('billFormCard').style.display='block';
 }
 function closeBillForm(){ document.getElementById('billFormCard').style.display='none'; editBillId=null; }
@@ -2524,7 +2573,10 @@ function renderBills(){
   if(!S.bills.length){ el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:8px 0;">No bills yet.</div>'; return; }
   el.innerHTML=`<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Name</th><th>Category</th><th>Freq</th><th>Due</th><th style="text-align:right">Amount</th><th style="text-align:right">Monthly</th><th></th></tr></thead><tbody>
     ${S.bills.map(b=>`<tr ondblclick="openEditBill('${b.id}')" style="cursor:pointer;" title="Double-click to edit">
-      <td>${b.name}</td><td><span class="badge muted">${b.category||'—'}</span></td>
+      <td>
+        <div style="font-weight:500;">${b.name}</div>
+        ${isPaycheckMode()&&b.checkSlot?`<span style="margin-top:3px;display:inline-block;padding:1px 7px;background:var(--bdim);color:var(--blue);border-radius:4px;font-family:var(--mono);font-size:10px;border:1px solid var(--blue);">${b.checkSlot.replace('week_','Wk ')}</span>`:isPaycheckMode()?`<span style="margin-top:3px;display:inline-block;padding:1px 7px;background:var(--ydim);color:var(--yellow);border-radius:4px;font-family:var(--mono);font-size:10px;">unassigned</span>`:''}
+      </td><td><span class="badge muted">${b.category||'—'}</span></td>
       <td style="font-size:12px;">${b.frequency}</td><td style="font-family:var(--mono);font-size:12px;">Day ${b.due}</td>
       <td style="font-family:var(--mono);text-align:right;">${fmt(b.amount)}</td>
       <td style="font-family:var(--mono);text-align:right;color:var(--text3);">${fmt(toMonthly(b.amount,b.frequency))}</td>
