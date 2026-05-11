@@ -2723,7 +2723,6 @@ function navTo(view){
   document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id==='view-'+view));
   renderView(view);
 }
-
 function renderView(v){
   if(v==='dashboard') renderDashboard();
   else if(v==='calendar') renderCalendar();
@@ -2734,6 +2733,8 @@ function renderView(v){
   else if(v==='tracker') renderTracker();
   else if(v==='settings') loadSettingsUI();
 }
+
+
 
 function openIncModal(){
   document.getElementById('inc_desc').value='';
