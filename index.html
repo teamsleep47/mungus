@@ -475,6 +475,13 @@ select option{background:var(--bg3);}
 .view.active{display:flex;flex-direction:column;gap:16px;}
 
 /* ─── CAL POPUP ──────────────────────────────────────── */
+/* ── Swipe gestures (mobile) ────────────────────────── */
+.swipe-row{position:relative;overflow:hidden;touch-action:pan-y;}
+.swipe-bg{position:absolute;top:0;bottom:0;width:100%;display:flex;align-items:center;padding:0 20px;font-family:var(--mono);font-size:13px;font-weight:600;pointer-events:none;opacity:0;transition:opacity .1s;}
+.swipe-bg.left{right:0;background:linear-gradient(to left,rgba(24,72,196,.9),transparent);color:#fff;justify-content:flex-end;}
+.swipe-bg.right{left:0;background:linear-gradient(to right,rgba(187,28,28,.9),transparent);color:#fff;justify-content:flex-start;}
+.swipe-content{position:relative;background:var(--bg2);transition:transform .2s ease;will-change:transform;}
+
 .cal-popup{
   position:fixed;background:var(--bg2);border:1px solid var(--border3);
   border-radius:var(--radius2);padding:14px;min-width:210px;
@@ -505,6 +512,13 @@ select option{background:var(--bg3);}
   body{font-size:15px;}
   .tbl td{font-size:14px;}
   .badge{font-size:11px;padding:3px 8px;}
+  /* Dashboard mobile card order */
+  #view-dashboard>#alertBanner{order:0;}
+  #view-dashboard>#paycheckDashCard{order:1;}
+  #view-dashboard>.card:nth-child(3){order:2;} /* Financial Overview */
+  #view-dashboard>.card:nth-child(5){order:3;} /* Quick Spend */
+  #view-dashboard>.card:nth-child(4){order:4;} /* Today's Activity */
+  #view-dashboard>.card:nth-child(6){order:5;} /* Bills This Month */
 }
 @media(max-width:380px){
   .stat-grid{grid-template-columns:1fr 1fr;}
@@ -701,8 +715,9 @@ select option{background:var(--bg3);}
     <main class="content" id="mainContent">
 
       <!-- ── DASHBOARD ────────────────────────────────── -->
-      <div class="view active" id="view-dashboard">
+      <div class="view active" id="view-dashboard" style="display:flex;flex-direction:column;">
         <div id="alertBanner"></div>
+        <div id="paycheckDashCard"></div>
         <div class="card">
           <div class="card-hdr">
             <div class="card-title">Financial Overview</div>
@@ -818,7 +833,7 @@ select option{background:var(--bg3);}
         <div class="card" id="paycheckCard" style="display:none;">
           <div class="card-hdr">
             <div class="card-title">Jobs</div>
-            <button class="btn btn-sm btn-green" onclick="addJob()">+ Add Job</button>
+            <button class="btn btn-sm btn-green" onclick="toggleAddJobForm()">+ Add Job</button>
           </div>
           <div class="card-sub">Name each job and log paychecks as they arrive. Bi-weekly from two jobs = a check every week.</div>
           <div id="jobsList"></div>
@@ -829,7 +844,24 @@ select option{background:var(--bg3);}
             <div class="card-title">Tips</div>
             <button class="btn btn-sm btn-green" onclick="openLogTips()">+ Log Tips</button>
           </div>
-          <div class="card-sub">Log cash tips after each shift. Tips are added to your spending pool and update your daily allowance.</div>
+          <div class="card-sub">Log cash tips after each shift. Tips are added to your income pool and update your daily allowance.</div>
+          <!-- Inline tip form -->
+          <div id="addTipsForm" style="display:none;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);padding:14px;margin-bottom:14px;">
+            <div class="form-row" style="margin-bottom:10px;">
+              <div class="fg"><label>Amount ($)</label>
+                <input type="number" id="tip_amt" placeholder="0.00" step="0.01" min="0"
+                  onkeydown="if(event.key==='Enter')saveLogTip();if(event.key==='Escape')openLogTips()"></div>
+              <div class="fg"><label>Date</label>
+                <input type="date" id="tip_date"></div>
+              <div class="fg"><label>Note (optional)</label>
+                <input type="text" id="tip_note" placeholder="Friday night shift…"
+                  onkeydown="if(event.key==='Enter')saveLogTip();if(event.key==='Escape')openLogTips()"></div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-green btn-sm" onclick="saveLogTip()">Save Tips</button>
+              <button class="btn btn-sm" onclick="openLogTips()">Cancel</button>
+            </div>
+          </div>
           <div id="tipsLogList"></div>
           <div id="tipsSummary" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:none;">
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
@@ -884,6 +916,7 @@ select option{background:var(--bg3);}
           <div class="form-row" style="margin-bottom:14px;">
             <div class="fg"><label>Frequency</label><select id="bf_freq"><option value="monthly">Monthly</option><option value="weekly">Weekly</option><option value="yearly">Yearly</option></select></div>
             <div class="fg"><label>Due (day of month)</label><input type="number" id="bf_due" placeholder="1–31" min="1" max="31" onfocus="this.select()"></div>
+            <div class="fg" id="bf_check_slot_wrap" style="display:none;"><label>Assigned Check</label><select id="bf_check_slot"><option value="">Unassigned</option></select></div>
             <div class="fg"><label>Category</label><select id="bf_cat"><option>Housing</option><option>Utilities</option><option>Subscriptions</option><option>Insurance</option><option>Transport</option><option>Health</option><option>Other</option></select></div>
           </div>
           <div style="display:flex;gap:8px;">
@@ -1134,176 +1167,353 @@ function toMonthly(amount,freq){
 
 
 // ════════════════════════════════════════════════════════════
-// PAYCHECK MODE — Named Jobs + Tips
+// PAYCHECK MODE — Named Jobs + Tips + Bill Assignment
 // ════════════════════════════════════════════════════════════
 
-function addJob(){
-  if(!S.income.jobs) S.income.jobs=[];
-  const name=prompt('Job name (e.g. Walmart, McDonalds):');
-  if(!name||!name.trim()) return;
-  const freqStr=prompt('Pay frequency? (weekly/biweekly/monthly):') || 'biweekly';
-  const freq=['weekly','biweekly','monthly'].includes(freqStr.toLowerCase()) ? freqStr.toLowerCase() : 'biweekly';
-  const expectedStr=prompt('Expected check amount (optional, press Enter to skip):');
-  const expected=parseFloat(expectedStr)||0;
-  S.income.jobs.push({
-    id:Date.now().toString(),
-    name:name.trim(),
-    frequency:freq,
-    expected,
-    checks:[]
+// ── Helpers ──────────────────────────────────────────────────
+function isPaycheckMode(){ return S.income.mode==='paycheck'; }
+
+// How many checks per month across all jobs
+function checksPerMonth(){
+  const jobs=S.income.jobs||[];
+  return jobs.reduce((s,j)=>{
+    if(j.frequency==='weekly')    return s+4;
+    if(j.frequency==='biweekly')  return s+2;
+    if(j.frequency==='monthly')   return s+1;
+    return s+2;
+  },0);
+}
+
+// Weekly spending fund (paycheck mode)
+function calcWeeklyFund(){
+  const monthly = calcMonthlyIncome_raw();
+  const monthlyBills = S.bills.reduce((s,b)=>{
+    if(b.frequency==='monthly')  return s+b.amount;
+    if(b.frequency==='weekly')   return s+b.amount*4;
+    if(b.frequency==='yearly')   return s+b.amount/12;
+    return s+b.amount;
+  },0);
+  const monthlySavings = calcSavings(monthly);
+  return Math.max(0, (monthly - monthlyBills - monthlySavings) / 4.33);
+}
+
+// Per-check bill share
+function billsPerCheck(){
+  const cpm = checksPerMonth();
+  if(!cpm) return 0;
+  const monthlyBills = S.bills.reduce((s,b)=>{
+    if(b.frequency==='monthly')  return s+b.amount;
+    if(b.frequency==='weekly')   return s+b.amount*4;
+    if(b.frequency==='yearly')   return s+b.amount/12;
+    return s+b.amount;
+  },0);
+  return monthlyBills / cpm;
+}
+
+// Update the check slot dropdown in bill form
+function updateCheckSlotOptions(){
+  const wrap=document.getElementById('bf_check_slot_wrap');
+  const sel=document.getElementById('bf_check_slot');
+  if(!wrap||!sel) return;
+  if(!isPaycheckMode()){ wrap.style.display='none'; return; }
+  wrap.style.display='';
+  const jobs=S.income.jobs||[];
+  const options=['<option value="">Unassigned</option>'];
+  jobs.forEach(j=>{
+    const checksThisJob = j.frequency==='weekly'?4:j.frequency==='monthly'?1:2;
+    for(let i=1;i<=checksThisJob;i++){
+      const label=jobs.length>1?`${j.name} – Check ${i}`:`Check ${i} of month`;
+      options.push(`<option value="${j.id}_${i}">${label}</option>`);
+    }
   });
-  saveState(); renderJobsList(); renderIncomeView();
+  sel.innerHTML=options.join('');
 }
 
-function removeJob(id){
-  if(!confirm('Remove this job and all its check history?')) return;
-  S.income.jobs=(S.income.jobs||[]).filter(j=>j.id!==id);
-  saveState(); renderJobsList(); renderIncomeView();
-}
-
-function logPaycheck(jobId){
-  const job=(S.income.jobs||[]).find(j=>j.id===jobId);
-  if(!job) return;
-  const amtStr=prompt(`Log paycheck for ${job.name} ($):`+(job.expected?` (expected ~$${job.expected.toFixed(2)})`:''));
-  const amount=parseFloat(amtStr);
-  if(!amount||isNaN(amount)) return;
-  if(!job.checks) job.checks=[];
-  job.checks.push({id:Date.now().toString(), amount, date:todayStr()});
-  saveState(); renderJobsList(); renderIncomeView(); renderDashboard();
-}
-
-function removeCheck(jobId, checkId){
-  const job=(S.income.jobs||[]).find(j=>j.id===jobId);
-  if(!job) return;
-  job.checks=(job.checks||[]).filter(c=>c.id!==checkId);
-  saveState(); renderJobsList(); renderIncomeView(); renderDashboard();
-}
-
+// ── Jobs ─────────────────────────────────────────────────────
 function renderJobsList(){
   const el=document.getElementById('jobsList');
   if(!el) return;
   if(!S.income.jobs) S.income.jobs=[];
+
+  // Always show add-job form at top
+  const addForm=`<div id="addJobForm" style="display:none;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);padding:14px;margin-bottom:14px;">
+    <div class="form-row" style="margin-bottom:10px;">
+      <div class="fg" style="flex:2;"><label>Job Name</label>
+        <input type="text" id="newJobName" placeholder="Walmart, McDonalds…"
+          onkeydown="if(event.key==='Enter')saveNewJob();if(event.key==='Escape')closeAddJobForm()"></div>
+      <div class="fg"><label>Pay Frequency</label>
+        <select id="newJobFreq">
+          <option value="biweekly">Bi-weekly</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+        </select></div>
+      <div class="fg"><label>Expected Amount ($)</label>
+        <input type="number" id="newJobExpected" placeholder="0.00" step="0.01" min="0"
+          onkeydown="if(event.key==='Enter')saveNewJob();if(event.key==='Escape')closeAddJobForm()"></div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-green btn-sm" onclick="saveNewJob()">Add Job</button>
+      <button class="btn btn-sm" onclick="closeAddJobForm()">Cancel</button>
+    </div>
+  </div>`;
+
   if(!S.income.jobs.length){
-    el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:8px 0;">No jobs added yet. Use "+ Add Job" to get started.</div>';
+    el.innerHTML=addForm+'<div style="color:var(--text3);font-size:13px;padding:8px 0;">No jobs yet. Use "+ Add Job" to get started.</div>';
     return;
   }
+
   const now=new Date();
   const monthStr=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const wkStart=new Date(now); wkStart.setDate(now.getDate()-now.getDay()); wkStart.setHours(0,0,0,0);
 
-  el.innerHTML=S.income.jobs.map(job=>{
+  const jobsHtml=S.income.jobs.map((job,ji)=>{
     const checks=job.checks||[];
-    const monthChecks=checks.filter(ch=>ch.date.startsWith(monthStr));
-    const monthTotal=monthChecks.reduce((s,c)=>s+c.amount,0);
-    const lastCheck=checks.sort((a,b)=>b.date.localeCompare(a.date))[0];
+    const monthTotal=checks.filter(ch=>ch.date.startsWith(monthStr)).reduce((s,c)=>s+c.amount,0);
+    const wkChecks=checks.filter(ch=>new Date(ch.date+'T00:00:00')>=wkStart);
+    const wkTotal=wkChecks.reduce((s,c)=>s+c.amount,0);
+    const recent=checks.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
     const freqLabel={weekly:'Weekly',biweekly:'Bi-weekly',monthly:'Monthly'}[job.frequency]||job.frequency;
 
     return `<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius2);padding:14px;margin-bottom:12px;">
-      <!-- Job header -->
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;">
         <div>
-          <div style="font-size:15px;font-weight:700;color:var(--text);">${job.name}</div>
-          <div style="font-size:12px;color:var(--text3);margin-top:2px;font-family:var(--mono);">${freqLabel}${job.expected?' · Expected ~'+fmt(job.expected):''}${lastCheck?' · Last: '+fmt(lastCheck.amount)+' on '+lastCheck.date:''}</div>
+          <div style="font-size:15px;font-weight:700;">${job.name}</div>
+          <div style="font-size:12px;color:var(--text3);font-family:var(--mono);margin-top:2px;">${freqLabel}${job.expected?' · Expected ~'+fmt(job.expected):''}</div>
         </div>
         <div style="display:flex;gap:6px;align-items:center;">
-          <div style="text-align:right;margin-right:4px;">
-            <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green);">${fmt(monthTotal)}</div>
-            <div style="font-size:11px;color:var(--text3);">this month</div>
+          <div style="text-align:right;">
+            <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green);">${fmt(wkTotal)}<span style="font-size:10px;color:var(--text3);font-weight:400;">/wk</span></div>
+            <div style="font-size:11px;color:var(--text3);">${fmt(monthTotal)} this month</div>
           </div>
-          <button class="btn btn-sm btn-green" onclick="logPaycheck('${job.id}')">+ Check</button>
+          <button class="btn btn-sm btn-green" onclick="toggleLogCheckForm('${job.id}')">+ Check</button>
           <button class="btn btn-sm btn-red" onclick="removeJob('${job.id}')">✕</button>
         </div>
       </div>
-      <!-- Recent checks -->
-      ${checks.length ? `<div style="border-top:1px solid var(--border);padding-top:8px;">
+
+      <!-- Inline log check form -->
+      <div id="logCheckForm_${job.id}" style="display:none;background:var(--bg3);border-radius:var(--radius);padding:12px;margin-bottom:10px;border:1px solid var(--border2);">
+        <div class="form-row" style="margin-bottom:8px;">
+          <div class="fg"><label>Amount ($)</label>
+            <input type="number" id="lc_amt_${job.id}" placeholder="0.00" step="0.01" min="0"
+              onkeydown="if(event.key==='Enter')saveLogCheck('${job.id}');if(event.key==='Escape')toggleLogCheckForm('${job.id}')"></div>
+          <div class="fg"><label>Date</label>
+            <input type="date" id="lc_date_${job.id}" value="${todayStr()}"></div>
+          <div class="fg"><label>Note (optional)</label>
+            <input type="text" id="lc_note_${job.id}" placeholder="Regular check, bonus…"
+              onkeydown="if(event.key==='Enter')saveLogCheck('${job.id}');if(event.key==='Escape')toggleLogCheckForm('${job.id}')"></div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-green btn-sm" onclick="saveLogCheck('${job.id}')">Log Check</button>
+          <button class="btn btn-sm" onclick="toggleLogCheckForm('${job.id}')">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Check history -->
+      ${recent.length?`<div style="border-top:1px solid var(--border);padding-top:8px;">
         <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:6px;">RECENT CHECKS</div>
-        ${checks.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,4).map(ch=>`
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);">
-            <span style="font-family:var(--mono);font-size:12px;color:var(--text3);">${ch.date}</span>
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--green);">+${fmt(ch.amount)}</span>
+        ${recent.map(ch=>`
+          <div id="check_row_${ch.id}" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
+            <div id="check_view_${ch.id}" style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;">
+              <span style="font-family:var(--mono);font-size:12px;color:var(--text3);flex-shrink:0;">${ch.date}</span>
+              <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green);">+${fmt(ch.amount)}</span>
+              ${ch.note?`<span style="font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${ch.note}</span>`:''}
+            </div>
+            <div id="check_edit_${ch.id}" style="display:none;flex:1;display:none;">
+              <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                <input type="number" id="ce_amt_${ch.id}" value="${ch.amount}" step="0.01" style="width:90px;font-size:12px;padding:4px 6px;"
+                  onkeydown="if(event.key==='Enter')saveCheckEdit('${job.id}','${ch.id}');if(event.key==='Escape')cancelCheckEdit('${ch.id}')"
+                  onblur="setTimeout(()=>{const r=document.getElementById('check_edit_${ch.id}');if(r&&r.style.display!=='none'&&!r.contains(document.activeElement))saveCheckEdit('${job.id}','${ch.id}');},150)">
+                <input type="date" id="ce_date_${ch.id}" value="${ch.date}" style="font-size:12px;padding:4px 6px;"
+                  onkeydown="if(event.key==='Enter')saveCheckEdit('${job.id}','${ch.id}');if(event.key==='Escape')cancelCheckEdit('${ch.id}')">
+                <input type="text" id="ce_note_${ch.id}" value="${ch.note||''}" placeholder="Note" style="flex:1;font-size:12px;padding:4px 6px;"
+                  onkeydown="if(event.key==='Enter')saveCheckEdit('${job.id}','${ch.id}');if(event.key==='Escape')cancelCheckEdit('${ch.id}')">
+                <button class="btn btn-xs btn-green" onclick="saveCheckEdit('${job.id}','${ch.id}')">✓</button>
+                <button class="btn btn-xs" onclick="cancelCheckEdit('${ch.id}')">✕</button>
+              </div>
+            </div>
+            <div style="display:flex;gap:4px;flex-shrink:0;">
+              <button class="btn btn-xs" onclick="startCheckEdit('${ch.id}')">✎</button>
               <button class="btn btn-xs btn-red" onclick="removeCheck('${job.id}','${ch.id}')">✕</button>
             </div>
           </div>`).join('')}
-        ${checks.length>4?`<div style="font-size:11px;color:var(--text3);margin-top:6px;">+${checks.length-4} older checks</div>`:''}
-      </div>` : '<div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:4px;">No checks logged yet.</div>'}
+        ${checks.length>5?`<div style="font-size:11px;color:var(--text3);margin-top:4px;">+${checks.length-5} older entries</div>`:''}
+      </div>`:'<div style="font-size:12px;color:var(--text3);font-style:italic;">No checks logged yet.</div>'}
     </div>`;
   }).join('');
+
+  el.innerHTML=addForm+jobsHtml;
+}
+
+function addJob(){ toggleAddJobForm(); }
+function toggleAddJobForm(){
+  const f=document.getElementById('addJobForm');
+  if(f){ f.style.display=f.style.display==='none'?'block':'none'; if(f.style.display==='block') document.getElementById('newJobName')?.focus(); }
+}
+function closeAddJobForm(){
+  const f=document.getElementById('addJobForm');
+  if(f) f.style.display='none';
+  ['newJobName','newJobExpected'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+}
+function saveNewJob(){
+  const name=(document.getElementById('newJobName')?.value||'').trim();
+  const freq=document.getElementById('newJobFreq')?.value||'biweekly';
+  const expected=parseFloat(document.getElementById('newJobExpected')?.value)||0;
+  if(!name) return;
+  if(!S.income.jobs) S.income.jobs=[];
+  S.income.jobs.push({id:Date.now().toString(),name,frequency:freq,expected,checks:[]});
+  saveState(); renderJobsList(); updateCheckSlotOptions(); renderIncomeView();
+}
+function removeJob(id){
+  if(!confirm('Remove this job and all its check history?')) return;
+  S.income.jobs=(S.income.jobs||[]).filter(j=>j.id!==id);
+  saveState(); renderJobsList(); updateCheckSlotOptions(); renderIncomeView();
+}
+
+function toggleLogCheckForm(jobId){
+  const f=document.getElementById('logCheckForm_'+jobId);
+  if(!f) return;
+  const open=f.style.display==='none';
+  f.style.display=open?'block':'none';
+  if(open){ const td=document.getElementById('lc_date_'+jobId); if(td) td.value=todayStr(); document.getElementById('lc_amt_'+jobId)?.focus(); }
+}
+function saveLogCheck(jobId){
+  const job=(S.income.jobs||[]).find(j=>j.id===jobId); if(!job) return;
+  const amount=parseFloat(document.getElementById('lc_amt_'+jobId)?.value||'0');
+  const date=document.getElementById('lc_date_'+jobId)?.value||todayStr();
+  const note=(document.getElementById('lc_note_'+jobId)?.value||'').trim();
+  if(!amount) return;
+  if(!job.checks) job.checks=[];
+  job.checks.push({id:Date.now().toString(),amount,date,note});
+  // Clear form
+  ['lc_amt_','lc_note_'].forEach(p=>{ const el=document.getElementById(p+jobId); if(el) el.value=''; });
+  toggleLogCheckForm(jobId);
+  saveState(); renderJobsList(); renderDashboard(); renderIncomeView();
+}
+
+function startCheckEdit(checkId){
+  document.getElementById('check_view_'+checkId).style.display='none';
+  const ed=document.getElementById('check_edit_'+checkId);
+  ed.style.display='flex'; ed.style.removeProperty('display'); // override inline display:none
+  ed.style.display='block';
+  document.getElementById('ce_amt_'+checkId)?.focus();
+}
+function cancelCheckEdit(checkId){
+  document.getElementById('check_view_'+checkId).style.display='flex';
+  document.getElementById('check_edit_'+checkId).style.display='none';
+}
+function saveCheckEdit(jobId,checkId){
+  const job=(S.income.jobs||[]).find(j=>j.id===jobId); if(!job) return;
+  const ch=(job.checks||[]).find(c=>c.id===checkId); if(!ch) return;
+  const amt=parseFloat(document.getElementById('ce_amt_'+checkId)?.value||'0');
+  const date=document.getElementById('ce_date_'+checkId)?.value||ch.date;
+  const note=(document.getElementById('ce_note_'+checkId)?.value||'').trim();
+  if(amt) ch.amount=amt; ch.date=date; ch.note=note;
+  saveState(); renderJobsList(); renderDashboard(); renderIncomeView();
+}
+function removeCheck(jobId,checkId){
+  const job=(S.income.jobs||[]).find(j=>j.id===jobId); if(!job) return;
+  job.checks=(job.checks||[]).filter(c=>c.id!==checkId);
+  saveState(); renderJobsList(); renderIncomeView(); renderDashboard();
 }
 
 // ── Tips ─────────────────────────────────────────────────────
 function openLogTips(){
-  const amtStr=prompt('Tip amount to log ($):');
-  const amount=parseFloat(amtStr);
-  if(!amount||isNaN(amount)) return;
-  const noteStr=prompt('Note (optional — e.g. "Friday night shift"):') || '';
-  if(!S.income.tips) S.income.tips=[];
-  S.income.tips.push({id:Date.now().toString(), amount, date:todayStr(), note:noteStr.trim()});
-  saveState(); renderTipsList(); renderIncomeView(); renderDashboard();
+  const el=document.getElementById('addTipsForm');
+  if(el){ el.style.display=el.style.display==='none'?'block':'none'; if(el.style.display==='block') document.getElementById('tip_amt')?.focus(); }
 }
-
+function saveLogTip(){
+  const amount=parseFloat(document.getElementById('tip_amt')?.value||'0');
+  const date=document.getElementById('tip_date')?.value||todayStr();
+  const note=(document.getElementById('tip_note')?.value||'').trim();
+  if(!amount) return;
+  if(!S.income.tips) S.income.tips=[];
+  S.income.tips.push({id:Date.now().toString(),amount,date,note});
+  ['tip_amt','tip_note'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('addTipsForm').style.display='none';
+  saveState(); renderTipsList(); renderDashboard(); renderIncomeView();
+}
 function removeTip(id){
   S.income.tips=(S.income.tips||[]).filter(t=>t.id!==id);
   saveState(); renderTipsList(); renderIncomeView(); renderDashboard();
 }
-
 function renderTipsList(){
   const el=document.getElementById('tipsLogList');
   const sumEl=document.getElementById('tipsSummary');
   if(!el) return;
   if(!S.income.tips) S.income.tips=[];
-
   const now=new Date();
   const wkStart=new Date(now); wkStart.setDate(now.getDate()-now.getDay()); wkStart.setHours(0,0,0,0);
   const moStr=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-
-  const wkTips=S.income.tips.filter(t=>new Date(t.date+'T00:00:00')>=wkStart);
-  const moTips=S.income.tips.filter(t=>t.date.startsWith(moStr));
-  const wkTotal=wkTips.reduce((s,t)=>s+t.amount,0);
-  const moTotal=moTips.reduce((s,t)=>s+t.amount,0);
-
-  // 4-week average
+  const wkTotal=S.income.tips.filter(t=>new Date(t.date+'T00:00:00')>=wkStart).reduce((s,t)=>s+t.amount,0);
+  const moTotal=S.income.tips.filter(t=>t.date.startsWith(moStr)).reduce((s,t)=>s+t.amount,0);
   const fourWkAgo=new Date(now); fourWkAgo.setDate(now.getDate()-28);
-  const recent=S.income.tips.filter(t=>new Date(t.date+'T00:00:00')>=fourWkAgo);
-  // Group by week to get weekly avg
-  const wkGroups={};
-  recent.forEach(t=>{
-    const d=new Date(t.date+'T00:00:00');
-    const ws=new Date(d); ws.setDate(d.getDate()-d.getDay());
-    const wk=ws.toISOString().slice(0,10);
-    if(!wkGroups[wk]) wkGroups[wk]=0;
-    wkGroups[wk]+=t.amount;
-  });
-  const wkVals=Object.values(wkGroups);
-  const avg=wkVals.length ? wkVals.reduce((s,v)=>s+v,0)/wkVals.length : 0;
-
-  // Update summary
-  if(sumEl){
-    sumEl.style.display=S.income.tips.length?'block':'none';
-    const tw=document.getElementById('tipsWeek'); if(tw) tw.textContent=fmt(wkTotal);
-    const tm=document.getElementById('tipsMonth'); if(tm) tm.textContent=fmt(moTotal);
-    const ta=document.getElementById('tipsAvg'); if(ta) ta.textContent=fmt(avg)+'/wk';
-  }
-
-  if(!S.income.tips.length){
-    el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:8px 0;">No tips logged yet. Log after each shift.</div>';
-    return;
-  }
-
-  const recent10=S.income.tips.slice().sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id)).slice(0,10);
+  const recent4wk=S.income.tips.filter(t=>new Date(t.date+'T00:00:00')>=fourWkAgo);
+  const wkGroups={}; recent4wk.forEach(t=>{ const d=new Date(t.date+'T00:00:00'); const ws=new Date(d); ws.setDate(d.getDate()-d.getDay()); const wk=ws.toISOString().slice(0,10); if(!wkGroups[wk]) wkGroups[wk]=0; wkGroups[wk]+=t.amount; });
+  const wkVals=Object.values(wkGroups); const avg=wkVals.length?wkVals.reduce((s,v)=>s+v,0)/wkVals.length:0;
+  if(sumEl){ sumEl.style.display=S.income.tips.length?'block':'none'; const tw=document.getElementById('tipsWeek'); if(tw) tw.textContent=fmt(wkTotal); const tm=document.getElementById('tipsMonth'); if(tm) tm.textContent=fmt(moTotal); const ta=document.getElementById('tipsAvg'); if(ta) ta.textContent=fmt(avg)+'/wk'; }
+  if(!S.income.tips.length){ el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:8px 0;">No tips logged yet.</div>'; return; }
+  const recent=S.income.tips.slice().sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id)).slice(0,10);
   el.innerHTML=`<div style="border-top:1px solid var(--border);padding-top:8px;margin-top:4px;">
-    <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:6px;">RECENT ENTRIES</div>
-    ${recent10.map(t=>`
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);">
-        <div>
-          <span style="font-family:var(--mono);font-size:12px;color:var(--text3);">${t.date}</span>
-          ${t.note?`<span style="font-size:12px;color:var(--text2);margin-left:8px;">${t.note}</span>`:''}
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green);">+${fmt(t.amount)}</span>
-          <button class="btn btn-xs btn-red" onclick="removeTip('${t.id}')">✕</button>
-        </div>
-      </div>`).join('')}
+    <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:6px;">RECENT TIPS</div>
+    ${recent.map(t=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);">
+      <div><span style="font-family:var(--mono);font-size:12px;color:var(--text3);">${t.date}</span>${t.note?`<span style="font-size:12px;color:var(--text2);margin-left:8px;">${t.note}</span>`:''}</div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green);">+${fmt(t.amount)}</span>
+        <button class="btn btn-xs btn-red" onclick="removeTip('${t.id}')">✕</button>
+      </div>
+    </div>`).join('')}
     ${S.income.tips.length>10?`<div style="font-size:11px;color:var(--text3);margin-top:6px;">+${S.income.tips.length-10} older entries</div>`:''}
+  </div>`;
+}
+
+// ── Paycheck dashboard stats ──────────────────────────────────
+function renderPaycheckDash(){
+  const el=document.getElementById('paycheckDashCard');
+  if(!el) return;
+  el.style.display=isPaycheckMode()?'block':'none';
+  if(!isPaycheckMode()) return;
+  const cpm=checksPerMonth();
+  const bpc=billsPerCheck();
+  const weekly=calcWeeklyFund();
+  const now=new Date();
+  const wkStart=new Date(now); wkStart.setDate(now.getDate()-now.getDay()); wkStart.setHours(0,0,0,0);
+  const wkTxTotal=S.transactions.filter(t=>new Date(t.date+'T00:00:00')>=wkStart).reduce((s,t)=>s+t.amount,0);
+  const wkLeft=weekly-wkTxTotal;
+  const wkChecks=(S.income.jobs||[]).reduce((s,j)=>{return s+(j.checks||[]).filter(ch=>new Date(ch.date+'T00:00:00')>=wkStart).reduce((ss,c)=>ss+c.amount,0);},0);
+  const wkTips=(S.income.tips||[]).filter(t=>new Date(t.date+'T00:00:00')>=wkStart).reduce((s,t)=>s+t.amount,0);
+
+  el.innerHTML=`<div class="card" style="margin-bottom:16px;">
+    <div class="card-hdr"><div class="card-title">This Week</div></div>
+    <div class="stat-grid" style="margin-top:10px;">
+      <div class="stat">
+        <div class="stat-lbl">Checks In</div>
+        <div class="stat-val" style="color:var(--green);">${fmt(wkChecks)}</div>
+        <div class="stat-sub">${cpm} checks/month</div>
+      </div>
+      <div class="stat">
+        <div class="stat-lbl">Tips In</div>
+        <div class="stat-val" style="color:var(--green);">${fmt(wkTips)}</div>
+        <div class="stat-sub">this week</div>
+      </div>
+      <div class="stat">
+        <div class="stat-lbl">Weekly Fund</div>
+        <div class="stat-val" style="color:var(--blue);">${fmt(weekly)}</div>
+        <div class="stat-sub">after bills & savings</div>
+      </div>
+      <div class="stat">
+        <div class="stat-lbl">Left to Spend</div>
+        <div class="stat-val" style="color:${wkLeft<0?'var(--red)':'var(--green)'};">${fmtS(wkLeft)}</div>
+        <div class="stat-sub">${fmt(wkTxTotal)} spent</div>
+      </div>
+    </div>
+    <div style="margin-top:12px;padding:12px;background:var(--bg3);border-radius:var(--radius);border:1px solid var(--border2);">
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:6px;">PER-CHECK BILL SHARE</div>
+      <div style="display:flex;align-items:baseline;gap:6px;">
+        <span style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--red);">${fmt(bpc)}</span>
+        <span style="font-size:12px;color:var(--text3);">reserved per check · ${cpm} checks/month</span>
+      </div>
+      <div style="font-size:12px;color:var(--text3);margin-top:4px;">When a check arrives, set aside ${fmt(bpc)} for bills before spending anything.</div>
+    </div>
   </div>`;
 }
 
@@ -1585,12 +1795,20 @@ function renderTodayPanel(){
   const txs=S.transactions.filter(t=>t.date===k).reverse();
   const spent=getTodaySpent(), daily=calcDailyAllowance(), roll=S.settings.rollover||0, rem=calcSafeToSpend();
   const el=document.getElementById('todayActivity');
+  const isMob=window.innerWidth<=680;
   el.innerHTML=txs.length?txs.slice(0,5).map(t=>`
-    <div data-txid="${t.id}" ondblclick="startEditTx('${t.id}');renderDashboard()"
-      style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);cursor:default;"
-      title="Double-click to edit">
-      <div><div style="font-size:13px;">${t.desc}</div><div style="font-size:11px;color:var(--text3);">${t.category}</div></div>
-      <div style="font-family:var(--mono);color:var(--red);font-size:13px;">−${fmt(t.amount)}</div>
+    <div class="${isMob?'swipe-row':''}" data-txid="${t.id}">
+      ${isMob?'<div class="swipe-bg right">🗑 Delete</div><div class="swipe-bg left">✎ Edit</div>':''}
+      <div class="${isMob?'swipe-content':''}" ondblclick="startEditTx('${t.id}');renderDashboard()"
+        style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);cursor:default;${isMob?'background:var(--bg2);':''}"
+        title="Double-click to edit">
+        <div style="flex:1;min-width:0;"><div style="font-size:13px;">${t.desc}</div><div style="font-size:11px;color:var(--text3);">${t.category}</div></div>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+          <div style="font-family:var(--mono);color:var(--red);font-size:13px;">−${fmt(t.amount)}</div>
+          ${!isMob?`<button class="btn btn-xs" onclick="event.stopPropagation();startEditTx('${t.id}')" title="Edit">✎</button>
+          <button class="btn btn-xs btn-red" onclick="event.stopPropagation();removeTransaction('${t.id}')" title="Delete">✕</button>`:''}
+        </div>
+      </div>
     </div>`).join('')
   :`<div style="color:var(--text3);font-size:13px;padding:8px 0;">No transactions today.</div>`;
   // Populate footer labels
@@ -1651,8 +1869,8 @@ function renderUpcomingShort(){
   el.innerHTML=monthBills.map(x=>{
     const dateStr=`${y}-${String(m+1).padStart(2,'0')}-${String(x.date.getDate()).padStart(2,'0')}`;
     const paid=isBillPaid(x.bill,dateStr);
-    const col=paid?'g':x.days<0?'r':x.days<=7?'y':'muted';
-    const lbl=paid?'Paid':x.days===0?'Today':(!paid&&x.days<0)?`${Math.abs(x.days)}d overdue`:`${x.days}d`;
+    const col=paid?'g':(!paid&&x.days<0)?'r':x.days<=7?'y':'muted';
+    const lbl=paid?'Paid':x.days===0?'Today':(!paid&&x.days<0)?`${Math.abs(x.days)}d overdue`:`in ${x.days}d`;
     return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);${paid?'opacity:.55':''}">
       <div style="flex:1;min-width:0;">
         <div style="font-size:13px;${paid?'text-decoration:line-through;':''}">${x.bill.name}</div>
@@ -1975,6 +2193,8 @@ function openEditBill(id){
   document.getElementById('bf_name').value=b.name; document.getElementById('bf_amount').value=b.amount;
   document.getElementById('bf_freq').value=b.frequency; document.getElementById('bf_due').value=b.due;
   document.getElementById('bf_cat').value=b.category||'Other';
+  updateCheckSlotOptions();
+  const cs=document.getElementById('bf_check_slot'); if(cs) cs.value=b.checkSlot||'';
   document.getElementById('billFormCard').style.display='block';
 }
 function closeBillForm(){ document.getElementById('billFormCard').style.display='none'; editBillId=null; }
@@ -1984,8 +2204,9 @@ function saveBill(){
   const frequency=document.getElementById('bf_freq').value;
   const due=parseInt(document.getElementById('bf_due').value)||1;
   const category=document.getElementById('bf_cat').value;
+  const checkSlot=document.getElementById('bf_check_slot')?.value||'';
   if(!name||!amount){ alert('Name and amount required.'); return; }
-  if(editBillId){ const i=S.bills.findIndex(b=>b.id===editBillId); if(i>=0) S.bills[i]={...S.bills[i],name,amount,frequency,due,category}; }
+  if(editBillId){ const i=S.bills.findIndex(b=>b.id===editBillId); if(i>=0) S.bills[i]={...S.bills[i],name,amount,frequency,due,category,checkSlot}; }
   else S.bills.push({id:Date.now().toString(),name,amount,frequency,due,category});
   saveState(); closeBillForm(); renderBills(); renderDashboard();
 }
@@ -2198,7 +2419,7 @@ function saveTransaction(){
   const date=document.getElementById('tx_date').value;
   if(!desc||!amount){ alert('Description and amount required.'); return; }
   S.transactions.push({id:Date.now().toString(),desc,amount,category,date});
-  recalcRollover(); saveState(); closeTxModal(); renderTracker(); renderDashboard();
+  recalcRollover(); saveState(); closeTxModal(); renderTracker(); renderDashboard(); if(document.getElementById("view-forecast")?.classList.contains("active")) renderForecast();
 }
 
 function logQuickSpend(){
@@ -2219,6 +2440,7 @@ function removeTransaction(id){
   if(gDriveToken){ clearTimeout(syncTimeout); saveToDrive(); }
   renderTracker();
   renderDashboard();
+  if(document.getElementById("view-forecast")?.classList.contains("active")) renderForecast();
 }
 
 
@@ -2233,7 +2455,7 @@ function saveEditTx(id){
   if(n) S.transactions[i].desc=n.value.trim()||S.transactions[i].desc;
   if(cat) S.transactions[i].category=cat.value;
   if(a) S.transactions[i].amount=parseFloat(a.value)||S.transactions[i].amount;
-  recalcRollover(); saveState(); renderTracker(); renderDashboard();
+  recalcRollover(); saveState(); renderTracker(); renderDashboard(); if(document.getElementById("view-forecast")?.classList.contains("active")) renderForecast();
 }
 
 function recalcRollover(){
@@ -2367,6 +2589,7 @@ function renderTracker(){
   });
 
   container.innerHTML=html;
+  setTimeout(()=>attachSwipe(container),50);
 
   // Summaries
   const now=new Date();
@@ -2387,16 +2610,21 @@ function renderTracker(){
 
 
 function _txRow(t){
-  return `<div data-txid="${t.id}" ondblclick="startEditTx('${t.id}')"
-    style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border);cursor:default;background:var(--bg2);min-height:44px;">
-    <div style="flex:1;min-width:0;">
-      <div style="font-size:13px;">${t.desc}</div>
-      <span class="badge muted" style="margin-top:2px;">${t.category}</span>
-    </div>
-    <div style="font-family:var(--mono);font-size:13px;color:var(--red);flex-shrink:0;">−${fmt(t.amount)}</div>
-    <div style="display:flex;gap:4px;flex-shrink:0;">
-      <button class="btn btn-xs" onclick="event.stopPropagation();startEditTx('${t.id}')">✎</button>
-      <button class="btn btn-xs btn-red" onclick="event.stopPropagation();removeTransaction('${t.id}')">✕</button>
+  const isMobile=window.innerWidth<=680;
+  return `<div class="swipe-row" data-txid="${t.id}">
+    <div class="swipe-bg right">🗑 Delete</div>
+    <div class="swipe-bg left">✎ Edit</div>
+    <div class="swipe-content" ondblclick="startEditTx('${t.id}')"
+      style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border);cursor:default;background:var(--bg2);min-height:44px;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;">${t.desc}</div>
+        <span class="badge muted" style="margin-top:2px;">${t.category}</span>
+      </div>
+      <div style="font-family:var(--mono);font-size:13px;color:var(--red);flex-shrink:0;">−${fmt(t.amount)}</div>
+      <div style="display:flex;gap:4px;flex-shrink:0;">
+        ${isMobile?'':`<button class="btn btn-xs" onclick="event.stopPropagation();startEditTx('${t.id}')">✎</button>
+        <button class="btn btn-xs btn-red" onclick="event.stopPropagation();removeTransaction('${t.id}')">✕</button>`}
+      </div>
     </div>
   </div>`;
 }
@@ -2440,7 +2668,7 @@ function startEditTx(id){
 
 
 function renderAllPanels() {
-  recalcRollover();        // recalcs rollover field in S but does NOT call saveState
+  recalcRollover();
   renderDashboard();
   renderBills();
   renderSavingsView();
@@ -2875,6 +3103,65 @@ async function forcePullFromDrive() {
     startY = 0;
   }, { passive: true });
 })();
+
+
+// ════════════════════════════════════════════════════════════
+// SWIPE GESTURES (mobile transactions)
+// Right = delete (red), Left = edit (blue)
+// ════════════════════════════════════════════════════════════
+function initSwipeRow(el, onDelete, onEdit){
+  let startX=0, startY=0, dx=0, locked=false, axis=null;
+  const content=el.querySelector('.swipe-content');
+  const bgL=el.querySelector('.swipe-bg.left');
+  const bgR=el.querySelector('.swipe-bg.right');
+  if(!content) return;
+
+  el.addEventListener('touchstart',e=>{
+    startX=e.touches[0].clientX;
+    startY=e.touches[0].clientY;
+    dx=0; axis=null; locked=false;
+    content.style.transition='none';
+  },{passive:true});
+
+  el.addEventListener('touchmove',e=>{
+    const cx=e.touches[0].clientX, cy=e.touches[0].clientY;
+    const adx=Math.abs(cx-startX), ady=Math.abs(cy-startY);
+    if(!axis) axis=adx>ady?'x':'y';
+    if(axis==='y') return;
+    dx=cx-startX;
+    const limit=80;
+    const clamped=Math.max(-limit,Math.min(limit,dx));
+    content.style.transform=`translateX(${clamped}px)`;
+    if(bgL) bgL.style.opacity=dx<-20?Math.min(1,(Math.abs(dx)-20)/40):'0';
+    if(bgR) bgR.style.opacity=dx>20?Math.min(1,(dx-20)/40):'0';
+    if(Math.abs(dx)>10) e.preventDefault();
+  },{passive:false});
+
+  el.addEventListener('touchend',()=>{
+    content.style.transition='transform .2s ease';
+    if(bgL) bgL.style.opacity='0';
+    if(bgR) bgR.style.opacity='0';
+    if(dx<-60 && onEdit){ content.style.transform='translateX(0)'; onEdit(); }
+    else if(dx>60 && onDelete){ content.style.transform='translateX(0)'; onDelete(); }
+    else content.style.transform='translateX(0)';
+    dx=0;
+  },{passive:true});
+}
+
+function attachSwipe(container){
+  if(!container) return;
+  // Only attach on mobile
+  if(window.innerWidth>680) return;
+  container.querySelectorAll('.swipe-row[data-txid]').forEach(row=>{
+    const id=row.dataset.txid;
+    if(row._swipeInit) return;
+    row._swipeInit=true;
+    initSwipeRow(row,
+      ()=>{ if(confirm('Delete this transaction?')) removeTransaction(id); },
+      ()=>startEditTx(id)
+    );
+  });
+}
 
 // ── Wiring ────────────────────────────────────────────────────
 document.getElementById('calPrev').onclick = () => { calDate.setMonth(calDate.getMonth()-1); renderCalendar(); };
