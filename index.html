@@ -1230,30 +1230,50 @@ function calcWeeklyFund(){
     if(b.frequency==='yearly')   return s+b.amount/52;
     return s+b.amount/4.33;
   },0);
-  // Savings as weekly equivalent
-  const monthlySavings = calcSavings(calcMonthlyIncome());
-  const weeklySavings = monthlySavings / 4.33;
-  // In paycheck mode: use average weekly income based on expected check amounts
+
   if(isPaycheckMode()){
     const jobs=S.income.jobs||[];
-    // Sum expected weekly income from all jobs
-    const weeklyExpected=jobs.reduce((s,j)=>{
-      const exp=j.expected||0;
-      if(j.frequency==='weekly')    return s+exp;
-      if(j.frequency==='biweekly')  return s+exp/2;
-      if(j.frequency==='monthly')   return s+exp/4.33;
-      return s+exp/2;
+
+    // Weekly income: use expected if set, otherwise derive from actual check history
+    const weeklyIncome = jobs.reduce((s,j)=>{
+      // Priority 1: user-set expected amount
+      if(j.expected && j.expected>0){
+        if(j.frequency==='weekly')   return s+j.expected;
+        if(j.frequency==='biweekly') return s+j.expected/2;
+        if(j.frequency==='monthly')  return s+j.expected/4.33;
+        return s+j.expected/2;
+      }
+      // Priority 2: derive from actual checks logged (average per interval)
+      const checks=j.checks||[];
+      if(checks.length>0){
+        const avgCheck=checks.reduce((ss,ch)=>ss+ch.amount,0)/checks.length;
+        if(j.frequency==='weekly')   return s+avgCheck;
+        if(j.frequency==='biweekly') return s+avgCheck/2;
+        if(j.frequency==='monthly')  return s+avgCheck/4.33;
+        return s+avgCheck/2;
+      }
+      return s;
     },0);
-    // Add average weekly tips (4-week rolling)
-    const now=new Date(); const fourWkAgo=new Date(now); fourWkAgo.setDate(now.getDate()-28);
+
+    // Average weekly tips (4-week rolling)
+    const now=new Date();
+    const fourWkAgo=new Date(now); fourWkAgo.setDate(now.getDate()-28);
     const recentTips=(S.income.tips||[]).filter(t=>new Date(t.date+'T00:00:00')>=fourWkAgo);
-    const avgWkTips=recentTips.reduce((s,t)=>s+t.amount,0)/4;
-    const weeklyIncome=weeklyExpected+avgWkTips;
-    return Math.max(0, weeklyIncome - weeklyBills - weeklySavings);
+    const avgWkTips=recentTips.length ? recentTips.reduce((s,t)=>s+t.amount,0)/4 : 0;
+    const totalWeeklyIn = weeklyIncome + avgWkTips;
+
+    // Savings: fixed amount divided weekly, percent of weekly income
+    const weeklySavings = S.savings.type==='percent'
+      ? totalWeeklyIn * (S.savings.amount/100)
+      : (S.savings.amount||0) / 4.33;
+
+    return Math.max(0, totalWeeklyIn - weeklyBills - weeklySavings);
   }
-  // Non-paycheck: monthly income ÷ 4.33
+
+  // Non-paycheck modes: monthly ÷ 4.33
   const monthly=calcMonthlyIncome();
-  return Math.max(0,(monthly/4.33) - weeklyBills - weeklySavings);
+  const monthlySavings=calcSavings(monthly);
+  return Math.max(0,(monthly/4.33) - weeklyBills - (monthlySavings/4.33));
 }
 
 // Per-check bill share
