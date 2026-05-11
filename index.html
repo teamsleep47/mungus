@@ -949,6 +949,10 @@ select option{background:var(--bg3);}
               <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:4px;">5 YEARS</div>
               <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--blue);" id="savings5yr">$0.00</div>
             </div>
+            <div id="savingsPerCheckWrap" style="display:none;">
+              <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:4px;">PER CHECK</div>
+              <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--blue);" id="savingsPerCheck">$0.00</div>
+            </div>
           </div>
           
         </div>
@@ -1187,7 +1191,7 @@ function checksPerMonth(){
 
 // Weekly spending fund (paycheck mode)
 function calcWeeklyFund(){
-  const monthly = calcMonthlyIncome_raw();
+  const monthly = calcMonthlyIncome();
   const monthlyBills = S.bills.reduce((s,b)=>{
     if(b.frequency==='monthly')  return s+b.amount;
     if(b.frequency==='weekly')   return s+b.amount*4;
@@ -1471,50 +1475,50 @@ function renderTipsList(){
 function renderPaycheckDash(){
   const el=document.getElementById('paycheckDashCard');
   if(!el) return;
-  el.style.display=isPaycheckMode()?'block':'none';
-  if(!isPaycheckMode()) return;
-  const cpm=checksPerMonth();
-  const bpc=billsPerCheck();
-  const weekly=calcWeeklyFund();
+  if(!isPaycheckMode()){ el.innerHTML=''; return; }
+
+  const income = calcMonthlyIncome();
+  const cpm    = checksPerMonth()||1;
+  const bpc    = billsPerCheck();
+  const spc    = calcSavings(income) / cpm;
+  const avgCheck = income / cpm;
+  const spendable = Math.max(0, avgCheck - bpc - spc);
+
+  // This week incoming
   const now=new Date();
   const wkStart=new Date(now); wkStart.setDate(now.getDate()-now.getDay()); wkStart.setHours(0,0,0,0);
-  const wkTxTotal=S.transactions.filter(t=>new Date(t.date+'T00:00:00')>=wkStart).reduce((s,t)=>s+t.amount,0);
-  const wkLeft=weekly-wkTxTotal;
-  const wkChecks=(S.income.jobs||[]).reduce((s,j)=>{return s+(j.checks||[]).filter(ch=>new Date(ch.date+'T00:00:00')>=wkStart).reduce((ss,c)=>ss+c.amount,0);},0);
-  const wkTips=(S.income.tips||[]).filter(t=>new Date(t.date+'T00:00:00')>=wkStart).reduce((s,t)=>s+t.amount,0);
+  const wkStr=wkStart.toISOString().slice(0,10);
+  const wkChecks=(S.income.jobs||[]).reduce((s,j)=>(j.checks||[]).filter(ch=>ch.date>=wkStr).reduce((ss,ch)=>ss+ch.amount,s),0);
+  const wkTips=(S.income.tips||[]).filter(t=>t.date>=wkStr).reduce((s,t)=>s+t.amount,0);
+  const wkIn=wkChecks+wkTips;
 
-  el.innerHTML=`<div class="card" style="margin-bottom:16px;">
-    <div class="card-hdr"><div class="card-title">This Week</div></div>
-    <div class="stat-grid" style="margin-top:10px;">
-      <div class="stat">
-        <div class="stat-lbl">Checks In</div>
-        <div class="stat-val" style="color:var(--green);">${fmt(wkChecks)}</div>
-        <div class="stat-sub">${cpm} checks/month</div>
+  el.innerHTML=`<div class="card">
+    <div class="card-hdr">
+      <div class="card-title">Per-Check Breakdown</div>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--text3);">${cpm} checks/month</span>
+    </div>
+    <div style="background:var(--bg3);border-radius:var(--radius);padding:14px;margin-top:10px;border:1px solid var(--border2);">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);">
+        <span style="font-size:14px;color:var(--text2);">Avg check in</span>
+        <span style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--green);">~${fmt(avgCheck)}</span>
       </div>
-      <div class="stat">
-        <div class="stat-lbl">Tips In</div>
-        <div class="stat-val" style="color:var(--green);">${fmt(wkTips)}</div>
-        <div class="stat-sub">this week</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);">
+        <span style="font-size:14px;color:var(--text2);">Bills reserve</span>
+        <span style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--red);">−${fmt(bpc)}</span>
       </div>
-      <div class="stat">
-        <div class="stat-lbl">Weekly Fund</div>
-        <div class="stat-val" style="color:var(--blue);">${fmt(weekly)}</div>
-        <div class="stat-sub">after bills & savings</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);">
+        <span style="font-size:14px;color:var(--text2);">Savings reserve</span>
+        <span style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--blue);">−${fmt(spc)}</span>
       </div>
-      <div class="stat">
-        <div class="stat-lbl">Left to Spend</div>
-        <div class="stat-val" style="color:${wkLeft<0?'var(--red)':'var(--green)'};">${fmtS(wkLeft)}</div>
-        <div class="stat-sub">${fmt(wkTxTotal)} spent</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0 2px 0;">
+        <span style="font-size:15px;font-weight:700;">Spendable per check</span>
+        <span style="font-family:var(--mono);font-size:20px;font-weight:700;color:${spendable<=0?'var(--red)':'var(--green)'};">${fmt(spendable)}</span>
       </div>
     </div>
-    <div style="margin-top:12px;padding:12px;background:var(--bg3);border-radius:var(--radius);border:1px solid var(--border2);">
-      <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:6px;">PER-CHECK BILL SHARE</div>
-      <div style="display:flex;align-items:baseline;gap:6px;">
-        <span style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--red);">${fmt(bpc)}</span>
-        <span style="font-size:12px;color:var(--text3);">reserved per check · ${cpm} checks/month</span>
-      </div>
-      <div style="font-size:12px;color:var(--text3);margin-top:4px;">When a check arrives, set aside ${fmt(bpc)} for bills before spending anything.</div>
-    </div>
+    ${wkIn>0?`<div style="margin-top:10px;padding:10px 14px;background:var(--gdim);border:1px solid var(--green2);border-radius:var(--radius);display:flex;justify-content:space-between;align-items:center;">
+      <span style="font-size:13px;color:var(--text2);">This week — checks + tips</span>
+      <span style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--green);">+${fmt(wkIn)}</span>
+    </div>`:''}
   </div>`;
 }
 
@@ -1735,7 +1739,45 @@ function renderDashboard(){
   const safeC=safe<0?'r':safe<daily*.3?'y':'g';
   const rollC=roll<0?'r':roll<daily*3?'y':'g';
 
-  document.getElementById('statGrid').innerHTML=`
+  document.getElementById('statGrid').innerHTML = isPaycheckMode() ? `
+    <div class="stat" data-tip="Total checks + tips received this week.">
+      <div class="stat-lbl">Income This Week</div>
+      <div class="stat-val" style="color:var(--green);">${fmt((() => {
+        const now=new Date(), wkStart=new Date(now); wkStart.setDate(now.getDate()-now.getDay()); wkStart.setHours(0,0,0,0);
+        const wkStr=wkStart.toISOString().slice(0,10);
+        const checks=(S.income.jobs||[]).reduce((s,j)=>(j.checks||[]).filter(ch=>ch.date>=wkStr).reduce((ss,c)=>ss+c.amount,s),0);
+        const tips=(S.income.tips||[]).filter(t=>t.date>=wkStart.toISOString().slice(0,10)).reduce((s,t)=>s+t.amount,0);
+        return checks+tips;
+      })())}</div>
+      <div class="stat-sub">${checksPerMonth()} checks/month</div>
+    </div>
+    <div class="stat" style="cursor:pointer;" data-tip="Bills ÷ checks per month.\nSet this aside from every check before spending.">
+      <div class="stat-lbl">Bills/Check</div>
+      <div class="stat-val" style="color:var(--red);">${fmt(billsPerCheck())}</div>
+      <div class="stat-sub">${S.bills.length} bill${S.bills.length!==1?'s':''}</div>
+    </div>
+    <div class="stat b" data-tip="Savings contribution per check.\nSet aside with bills before spending.">
+      <div class="stat-lbl">Savings/Check</div>
+      <div class="stat-val" style="color:var(--blue);">${fmt(calcSavings(income)/checksPerMonth())}</div>
+      <div class="stat-sub">${fmt(calcSavings(income))}/month</div>
+    </div>
+    <div class="stat" data-tip="Weekly spending fund after bills and savings.">
+      <div class="stat-lbl">Weekly Fund</div>
+      <div class="stat-val">${fmt(calcWeeklyFund())}</div>
+      <div class="stat-sub" id="fundSubText"></div>
+      <div class="prog-track" style="margin-top:6px;"><div class="prog-fill" id="fundProg" style="width:0%;background:var(--blue);"></div></div>
+    </div>
+    <div class="stat" data-tip="Daily spending allowance.">
+      <div class="stat-lbl">Daily Allowance</div>
+      <div class="stat-val">${fmt(daily)}</div>
+      <div class="stat-sub">per day</div>
+    </div>
+    <div class="stat" data-tip="Safe to spend today including rollover.">
+      <div class="stat-lbl">Safe to Spend</div>
+      <div class="stat-val" style="color:${safe<0?'var(--red)':safe<buffer?'var(--yellow)':'var(--green)'};">${fmtS(safe)}</div>
+      <div class="stat-sub">${fmtS(roll)} rollover</div>
+    </div>
+  ` : `
     <div class="stat" data-tip="Total monthly income from all sources.\n${S.income.mode==='variable'?'Variable mode: sum of income logged this month.':S.income.mode==='hourly'?'Hourly: rate × hours × 52 ÷ 12.':'Fixed income converted to monthly.'}">
       <div class="stat-lbl">Monthly Income</div>
       <div class="stat-val">${fmt(income)}</div>
@@ -1746,30 +1788,25 @@ function renderDashboard(){
       <div class="stat-val">${fmt(bills)}</div>
       <div class="stat-sub">${S.bills.length} bill${S.bills.length!==1?'s':''}</div>
     </div>
-    <div class="stat b" data-tip="Locked savings.\nDeducted after bills, before spending.\nCannot be accessed by rollover.">
+    <div class="stat b" data-tip="Locked savings.\nDeducted after bills, before spending.">
       <div class="stat-lbl">Savings Goal</div>
       <div class="stat-val">${fmt(sav)}</div>
       <div class="stat-sub">${S.savings.type==='percent'?S.savings.amount+'% of income':'fixed'}</div>
     </div>
-    <div class="stat" data-tip="Money left for daily spending after bills and savings. Progress bar shows days elapsed this month.">
+    <div class="stat" data-tip="Money left for daily spending after bills and savings.">
       <div class="stat-lbl">Spending Fund</div>
       <div class="stat-val">${fmt(fund)}</div>
       <div class="stat-sub" id="fundSubText">÷ ${currentMonthDays()} days</div>
       <div class="prog-track" style="margin-top:6px;"><div class="prog-fill" id="fundProg" style="width:0%;background:var(--blue);"></div></div>
     </div>
-    <div class="stat" data-tip="Base daily limit from spending fund alone.\nDoes not include rollover yet.">
+    <div class="stat" data-tip="Your spending allowance per day after bills and savings.">
       <div class="stat-lbl">Daily Allowance</div>
       <div class="stat-val">${fmt(daily)}</div>
       <div class="stat-sub">per day</div>
     </div>
-    <div class="stat ${rollC}" data-tip="Unused daily allowance carried forward.\nNever touches savings.\nNegative means you've overspent on a previous day.">
-      <div class="stat-lbl">Rollover</div>
-      <div class="stat-val">${fmtS(roll)}</div>
-      <div class="stat-sub">${roll>=0?'banked':'deficit'}</div>
-    </div>
-    <div class="stat ${safeC} wide" data-tip="Daily allowance + rollover − spent today.\nExactly how much you can spend right now.">
-      <div class="stat-lbl">Safe to Spend Today</div>
-      <div class="stat-val">${fmtS(safe)}</div>
+    <div class="stat" data-tip="Safe to spend today.\nIncludes today's allowance plus/minus rollover.\nStays positive as long as you spend at or below your daily allowance.">
+      <div class="stat-lbl">Safe to Spend</div>
+      <div class="stat-val" style="color:${safe<0?'var(--red)':safe<buffer?'var(--yellow)':'var(--green)'};">${fmtS(safe)}</div>
       <div class="stat-sub">${fmt(daily)} allowance + ${fmtS(roll)} rollover − ${fmt(getTodaySpent())} spent</div>
     </div>
   `;
@@ -2403,6 +2440,14 @@ function renderSavingsView(){
   document.getElementById('savingsDisplay').textContent=fmt(_sm);
   const _syr=document.getElementById('savingsYearly'); if(_syr) _syr.textContent=fmt(_sm*12);
   const _s5=document.getElementById('savings5yr'); if(_s5) _s5.textContent=fmt(_sm*12*5);
+  const _spc=document.getElementById('savingsPerCheck');
+  const _spcw=document.getElementById('savingsPerCheckWrap');
+  if(_spc&&_spcw){
+    if(isPaycheckMode()&&checksPerMonth()>0){
+      _spc.textContent=fmt(_sm/checksPerMonth());
+      _spcw.style.display='';
+    } else { _spcw.style.display='none'; }
+  }
   setSavType(S.savings.type);
   document.getElementById('bufferVal').value=S.settings.minBuffer||100;
   renderSavingsGoals();
