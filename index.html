@@ -1240,22 +1240,21 @@ function updateCheckSlotOptions(){
   if(!isPaycheckMode()){ wrap.style.display='none'; return; }
   wrap.style.display='';
   const jobs=S.income.jobs||[];
-  const options=['<option value="">Unassigned (split evenly)</option>'];
-  // Build week slots: week 1-4 with job name for that week
-  // bi-weekly job: weeks 1&3 OR 2&4, weekly: all 4
-  // We assign sequentially across jobs
-  let weekAssign=[null,null,null,null]; // weeks 1-4
-  let wk=0;
+  const options=['<option value="">Unassigned</option>'];
+  // Build from each job's weekSlots
   jobs.forEach(j=>{
-    const checksPerMo=j.frequency==='weekly'?4:j.frequency==='monthly'?1:2;
-    for(let i=0;i<checksPerMo;i++){
-      if(wk<4){ weekAssign[wk]=j; wk++; }
-    }
-  });
-  weekAssign.forEach((job,wi)=>{
-    if(job){
-      const label=jobs.length>1?`Week ${wi+1} — ${job.name} check`:`Week ${wi+1} check`;
-      options.push(`<option value="week_${wi+1}">${label}</option>`);
+    const slots=j.weekSlots||[];
+    slots.forEach((wk,i)=>{
+      const label=jobs.length>1?`Week ${wk} — ${j.name}`:`Week ${wk}`;
+      options.push(`<option value="week_${wk}">${label}</option>`);
+    });
+    // Fallback if no weekSlots saved yet
+    if(!slots.length){
+      const count=j.frequency==='weekly'?4:j.frequency==='monthly'?1:2;
+      for(let i=0;i<count;i++){
+        const wk=i+1;
+        options.push(`<option value="week_${wk}">${jobs.length>1?`Week ${wk} — ${j.name}`:`Week ${wk}`}</option>`);
+      }
     }
   });
   sel.innerHTML=options.join('');
@@ -1274,15 +1273,16 @@ function renderJobsList(){
         <input type="text" id="newJobName" placeholder="Walmart, McDonalds…"
           onkeydown="if(event.key==='Enter')saveNewJob();if(event.key==='Escape')closeAddJobForm()"></div>
       <div class="fg"><label>Pay Frequency</label>
-        <select id="newJobFreq">
-          <option value="biweekly">Bi-weekly</option>
-          <option value="weekly">Weekly</option>
-          <option value="monthly">Monthly</option>
+        <select id="newJobFreq" onchange="updateJobWeekFields()">
+          <option value="biweekly">Bi-weekly (2 checks/month)</option>
+          <option value="weekly">Weekly (4 checks/month)</option>
+          <option value="monthly">Monthly (1 check/month)</option>
         </select></div>
       <div class="fg"><label>Expected Amount ($)</label>
         <input type="number" id="newJobExpected" placeholder="0.00" step="0.01" min="0"
           onkeydown="if(event.key==='Enter')saveNewJob();if(event.key==='Escape')closeAddJobForm()"></div>
     </div>
+    <div id="jobWeekFields" style="margin-bottom:10px;"></div>
     <div style="display:flex;gap:8px;">
       <button class="btn btn-green btn-sm" onclick="saveNewJob()">Add Job</button>
       <button class="btn btn-sm" onclick="closeAddJobForm()">Cancel</button>
@@ -1379,20 +1379,59 @@ function renderJobsList(){
 function addJob(){ toggleAddJobForm(); }
 function toggleAddJobForm(){
   const f=document.getElementById('addJobForm');
-  if(f){ f.style.display=f.style.display==='none'?'block':'none'; if(f.style.display==='block') document.getElementById('newJobName')?.focus(); }
+  if(f){ f.style.display=f.style.display==='none'?'block':'none';
+    if(f.style.display==='block'){
+      document.getElementById('newJobName')?.focus();
+      updateJobWeekFields(); // init week fields for default frequency
+    }
+  }
 }
 function closeAddJobForm(){
   const f=document.getElementById('addJobForm');
   if(f) f.style.display='none';
   ['newJobName','newJobExpected'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
 }
+
+// Update week assignment fields based on frequency selection
+function updateJobWeekFields(){
+  const freq = document.getElementById('newJobFreq')?.value || 'biweekly';
+  const el = document.getElementById('jobWeekFields');
+  if(!el) return;
+  const count = freq==='weekly'?4 : freq==='monthly'?1 : 2;
+  const weeks = [1,2,3,4];
+  const labels = freq==='weekly'
+    ? ['Week 1','Week 2','Week 3','Week 4']
+    : freq==='monthly'
+    ? ['Which week?']
+    : ['Check 1 lands on','Check 2 lands on'];
+
+  el.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:10px;margin-bottom:4px;">
+    <div style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-bottom:8px;letter-spacing:.06em;">ASSIGN CHECKS TO WEEKS OF MONTH</div>
+    <div class="form-row">
+      ${Array.from({length:count},(_,i)=>`
+        <div class="fg">
+          <label>${labels[i]||'Check '+(i+1)}</label>
+          <select id="newJobWeek_${i}">
+            ${weeks.map(w=>`<option value="${w}"${w===i+1?' selected':''}>${'Week '+w}</option>`).join('')}
+          </select>
+        </div>`).join('')}
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-top:4px;">These determine which week's dashboard shows this check's impact.</div>
+  </div>`;
+}
+
 function saveNewJob(){
   const name=(document.getElementById('newJobName')?.value||'').trim();
   const freq=document.getElementById('newJobFreq')?.value||'biweekly';
   const expected=parseFloat(document.getElementById('newJobExpected')?.value)||0;
   if(!name) return;
   if(!S.income.jobs) S.income.jobs=[];
-  S.income.jobs.push({id:Date.now().toString(),name,frequency:freq,expected,checks:[]});
+  const count = freq==='weekly'?4 : freq==='monthly'?1 : 2;
+  const weekSlots = Array.from({length:count},(_,i)=>{
+    const el=document.getElementById('newJobWeek_'+i);
+    return el ? parseInt(el.value)||i+1 : i+1;
+  });
+  S.income.jobs.push({id:Date.now().toString(),name,frequency:freq,expected,weekSlots,checks:[]});
   saveState(); renderJobsList(); updateCheckSlotOptions(); renderIncomeView();
 }
 function removeJob(id){
@@ -1415,11 +1454,33 @@ function saveLogCheck(jobId){
   const note=(document.getElementById('lc_note_'+jobId)?.value||'').trim();
   if(!amount) return;
   if(!job.checks) job.checks=[];
+
+  // Calculate rollover from previous check period
+  // Find this job's most recent previous check
+  const prevChecks=(job.checks||[]).slice().sort((a,b)=>a.date.localeCompare(b.date));
+  const lastCheck=prevChecks[prevChecks.length-1];
+  if(lastCheck){
+    // Days between last check and this check
+    const lastDate=new Date(lastCheck.date+'T00:00:00');
+    const thisDate=new Date(date+'T00:00:00');
+    const daysBetween=Math.max(0,Math.round((thisDate-lastDate)/86400000));
+    if(daysBetween>0){
+      // How much should have been available from last check
+      const daily=calcDailyAllowance();
+      const expectedSpend=daily*daysBetween;
+      // How much was actually spent in that period
+      const actualSpent=S.transactions.filter(t=>t.date>lastCheck.date&&t.date<=date)
+        .reduce((s,t)=>s+t.amount,0);
+      // Unspent = adds to rollover (handled by recalcRollover via daily calc)
+      // recalcRollover already handles this since it sums daily-spent for all past days
+    }
+  }
+
   job.checks.push({id:Date.now().toString(),amount,date,note});
   // Clear form
   ['lc_amt_','lc_note_'].forEach(p=>{ const el=document.getElementById(p+jobId); if(el) el.value=''; });
   toggleLogCheckForm(jobId);
-  saveState(); renderJobsList(); renderDashboard(); renderIncomeView();
+  saveState(); recalcRollover(); renderJobsList(); renderDashboard(); renderIncomeView();
 }
 
 function startCheckEdit(checkId){
@@ -1620,11 +1681,17 @@ function calcSavings(income){
 }
 
 function calcSpendingFund(){
+  if(isPaycheckMode()) return calcWeeklyFund(); // weekly spending fund
   const inc=calcMonthlyIncome(), bills=calcBillsMonthly(), sav=calcSavings(inc);
   return Math.max(0, inc-bills-sav);
 }
 
 function calcDailyAllowance(){
+  if(isPaycheckMode()){
+    // In paycheck mode: weekly fund ÷ 7
+    // Weekly fund = (expected weekly income) - (weekly bills) - (weekly savings)
+    return calcWeeklyFund() / 7;
+  }
   const days = currentMonthDays();
   return calcSpendingFund()/days;
 }
@@ -1815,15 +1882,24 @@ function renderDashboard(){
       })())}</div>
       <div class="stat-sub">${checksPerMonth()} checks/month</div>
     </div>
-    <div class="stat" style="cursor:pointer;" data-tip="Bills ÷ checks per month.\nSet this aside from every check before spending.">
-      <div class="stat-lbl">Bills/Check</div>
-      <div class="stat-val" style="color:var(--red);">${fmt(billsPerCheck())}</div>
-      <div class="stat-sub">${S.bills.length} bill${S.bills.length!==1?'s':''}</div>
+    <div class="stat" data-tip="Bills assigned to this week's check.\nAssign bills to check slots in the Bills tab.">
+      <div class="stat-lbl">This Check's Bills</div>
+      <div class="stat-val" style="color:var(--red);">${fmt((() => {
+        const wk = 'week_'+Math.ceil(new Date().getDate()/7);
+        return S.bills.filter(b=>b.checkSlot===wk).reduce((s,b)=>s+b.amount,0);
+      })())}</div>
+      <div class="stat-sub">week ${Math.ceil(new Date().getDate()/7)} of month</div>
     </div>
-    <div class="stat b" data-tip="Savings contribution per check.\nSet aside with bills before spending.">
+    <div class="stat b" data-tip="Savings to set aside from this check.\nCovers your monthly savings goal split across checks.">
       <div class="stat-lbl">Savings/Check</div>
-      <div class="stat-val" style="color:var(--blue);">${fmt(calcSavings(income)/checksPerMonth())}</div>
-      <div class="stat-sub">${fmt(calcSavings(income))}/month</div>
+      <div class="stat-val" style="color:var(--blue);">${fmt(calcSavings(income)/(checksPerMonth()||1))}</div>
+      <div class="stat-sub">${(() => {
+        const goals=S.savingsGoals||[];
+        if(!goals.length) return fmt(calcSavings(income))+'/month';
+        const allocated=goals.reduce((s,g)=>s+(g.amount||0),0);
+        const cpm=checksPerMonth()||1;
+        return goals.slice(0,2).map(g=>g.name.substring(0,8)+': '+fmt((g.amount||0)/cpm)).join(' · ')+(goals.length>2?' +more':'');
+      })()}</div>
     </div>
     <div class="stat" data-tip="Weekly spending fund after bills and savings.">
       <div class="stat-lbl">Weekly Fund</div>
