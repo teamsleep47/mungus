@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>Savings v8.0</title>
+<title>Savings</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300;400;500;600;700&family=Geist:wght@300;400;500;600&display=swap');
@@ -475,13 +475,6 @@ select option{background:var(--bg3);}
 .view.active{display:flex;flex-direction:column;gap:16px;}
 
 /* ─── CAL POPUP ──────────────────────────────────────── */
-/* ── Swipe gestures (mobile) ────────────────────────── */
-.swipe-row{position:relative;overflow:hidden;touch-action:pan-y;}
-.swipe-bg{position:absolute;top:0;bottom:0;width:100%;display:flex;align-items:center;padding:0 20px;font-family:var(--mono);font-size:13px;font-weight:600;pointer-events:none;opacity:0;transition:opacity .1s;}
-.swipe-bg.left{right:0;background:linear-gradient(to left,rgba(24,72,196,.9),transparent);color:#fff;justify-content:flex-end;}
-.swipe-bg.right{left:0;background:linear-gradient(to right,rgba(187,28,28,.9),transparent);color:#fff;justify-content:flex-start;}
-.swipe-content{position:relative;background:var(--bg2);transition:transform .2s ease;will-change:transform;}
-
 .cal-popup{
   position:fixed;background:var(--bg2);border:1px solid var(--border3);
   border-radius:var(--radius2);padding:14px;min-width:210px;
@@ -504,7 +497,7 @@ select option{background:var(--bg3);}
   .user-chip.visible{padding:3px;border-radius:50%;}
   .user-chip.visible .avatar{width:34px;height:34px;font-size:14px;}
   #hdrSignInBtn{font-size:12px;padding:6px 10px;}
-  .cal-day{min-height:64px;padding:5px;}
+  .cal-day{min-height:56px;}
   .card{padding:16px;}
   .export-hide{display:none;}
   .modal{padding:18px;}
@@ -512,20 +505,11 @@ select option{background:var(--bg3);}
   body{font-size:15px;}
   .tbl td{font-size:14px;}
   .badge{font-size:11px;padding:3px 8px;}
-  /* Dashboard mobile card order via flex */
-  #view-dashboard{display:flex !important;flex-direction:column;}
-  #view-dashboard>#alertBanner{order:0;}
-  #view-dashboard>#paycheckDashCard{order:1;}
-  #view-dashboard>.card:nth-child(3){order:2;}
-  #view-dashboard>.card:nth-child(5){order:3;}
-  #view-dashboard>.card:nth-child(4){order:4;}
-  #view-dashboard>.card:nth-child(6){order:5;}
 }
 @media(max-width:380px){
   .stat-grid{grid-template-columns:1fr 1fr;}
   .tab-lbl{display:none;}
   .tab-ico{font-size:22px;}
-  #syncStrip{display:none !important;}
 }
 @media(min-width:681px){
   .bottom-tabs{display:none;}
@@ -653,11 +637,6 @@ select option{background:var(--bg3);}
   <header class="hdr">
     <div class="hdr-logo"><div class="hdr-logo-dot"></div>Savings</div>
     <div class="hdr-right">
-      <!-- Inline sync status in header -->
-      <div id="syncStrip" style="display:none;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--text3);padding:4px 10px;background:var(--bg3);border-radius:20px;border:1px solid var(--border2);">
-        <span id="syncDot" style="width:6px;height:6px;border-radius:50%;background:var(--text3);flex-shrink:0;display:inline-block;"></span>
-        <span id="syncStripMsg"></span>
-      </div>
       <button class="btn btn-sm" id="themeBtn" onclick="toggleTheme()">☽</button>
       <button class="btn btn-sm btn-green export-hide" id="exportBtn" onclick="exportJSON()">↓ Export</button>
       <input type="file" id="importFile" accept=".json" style="display:none;">
@@ -672,6 +651,12 @@ select option{background:var(--bg3);}
       <button class="btn btn-sm" id="hdrSignInBtn" onclick="requestGoogleSignIn()" style="white-space:nowrap;">Sign in</button>
     </div>
   </header>
+
+  <!-- Sync indicator strip -->
+  <div id="syncStrip" style="display:none;height:28px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;align-items:center;justify-content:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--text3);">
+    <span id="syncDot" style="width:6px;height:6px;border-radius:50%;background:var(--text3);flex-shrink:0;display:inline-block;"></span>
+    <span id="syncStripMsg">Connecting…</span>
+  </div>
 
   <div class="body">
     <!-- Sidebar -->
@@ -718,7 +703,6 @@ select option{background:var(--bg3);}
       <!-- ── DASHBOARD ────────────────────────────────── -->
       <div class="view active" id="view-dashboard">
         <div id="alertBanner"></div>
-        <div id="paycheckDashCard"></div>
         <div class="card">
           <div class="card-hdr">
             <div class="card-title">Financial Overview</div>
@@ -830,58 +814,6 @@ select option{background:var(--bg3);}
             </div>
           </div>
         </div>
-        <!-- Paycheck mode -->
-        <div class="card" id="paycheckCard" style="display:none;">
-          <div class="card-hdr">
-            <div class="card-title">Jobs</div>
-            <button class="btn btn-sm btn-green" onclick="toggleAddJobForm()">+ Add Job</button>
-          </div>
-          <div class="card-sub">Name each job and log paychecks as they arrive. Bi-weekly from two jobs = a check every week.</div>
-          <div id="jobsList"></div>
-        </div>
-
-        <div class="card" id="tipsCard" style="display:none;">
-          <div class="card-hdr">
-            <div class="card-title">Tips</div>
-            <button class="btn btn-sm btn-green" onclick="openLogTips()">+ Log Tips</button>
-          </div>
-          <div class="card-sub">Log cash tips after each shift. Tips are added to your income pool and update your daily allowance.</div>
-          <!-- Inline tip form -->
-          <div id="addTipsForm" style="display:none;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);padding:14px;margin-bottom:14px;">
-            <div class="form-row" style="margin-bottom:10px;">
-              <div class="fg"><label>Amount ($)</label>
-                <input type="number" id="tip_amt" placeholder="0.00" step="0.01" min="0"
-                  onkeydown="if(event.key==='Enter')saveLogTip();if(event.key==='Escape')openLogTips()"></div>
-              <div class="fg"><label>Date</label>
-                <input type="date" id="tip_date"></div>
-              <div class="fg"><label>Note (optional)</label>
-                <input type="text" id="tip_note" placeholder="Friday night shift…"
-                  onkeydown="if(event.key==='Enter')saveLogTip();if(event.key==='Escape')openLogTips()"></div>
-            </div>
-            <div style="display:flex;gap:8px;">
-              <button class="btn btn-green btn-sm" onclick="saveLogTip()">Save Tips</button>
-              <button class="btn btn-sm" onclick="openLogTips()">Cancel</button>
-            </div>
-          </div>
-          <div id="tipsLogList"></div>
-          <div id="tipsSummary" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:none;">
-            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
-              <div>
-                <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:4px;">THIS WEEK</div>
-                <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--green);" id="tipsWeek">$0.00</div>
-              </div>
-              <div>
-                <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:4px;">THIS MONTH</div>
-                <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--green);" id="tipsMonth">$0.00</div>
-              </div>
-              <div>
-                <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:4px;">4-WK AVG</div>
-                <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--text2);" id="tipsAvg">$0.00</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
         <!-- Variable mode income log -->
         <div class="card" id="incomeLogCard" style="display:none;">
           <div class="card-hdr">
@@ -917,7 +849,6 @@ select option{background:var(--bg3);}
           <div class="form-row" style="margin-bottom:14px;">
             <div class="fg"><label>Frequency</label><select id="bf_freq"><option value="monthly">Monthly</option><option value="weekly">Weekly</option><option value="yearly">Yearly</option></select></div>
             <div class="fg"><label>Due (day of month)</label><input type="number" id="bf_due" placeholder="1–31" min="1" max="31" onfocus="this.select()"></div>
-            <div class="fg" id="bf_check_slot_wrap" style="display:none;"><label>Assigned Check</label><select id="bf_check_slot"><option value="">Unassigned</option></select></div>
             <div class="fg"><label>Category</label><select id="bf_cat"><option>Housing</option><option>Utilities</option><option>Subscriptions</option><option>Insurance</option><option>Transport</option><option>Health</option><option>Other</option></select></div>
           </div>
           <div style="display:flex;gap:8px;">
@@ -949,59 +880,9 @@ select option{background:var(--bg3);}
               <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:4px;">5 YEARS</div>
               <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--blue);" id="savings5yr">$0.00</div>
             </div>
-            <div id="savingsPerCheckWrap" style="display:none;">
-              <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:4px;">PER CHECK</div>
-              <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--blue);" id="savingsPerCheck">$0.00</div>
-            </div>
           </div>
           
         </div>
-        <div class="card">
-          <div class="card-hdr">
-            <div class="card-title">Savings Allocations</div>
-            <button class="btn btn-sm btn-green" onclick="openAddGoalForm()">+ Goal</button>
-          </div>
-          <div class="card-sub">Divide your savings into named goals. Does not change your savings total — just tracks where it goes.</div>
-
-          <!-- Add goal inline form (hidden by default) -->
-          <div id="addGoalForm" style="display:none;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);padding:14px;margin-bottom:14px;">
-            <div class="form-row" style="margin-bottom:10px;">
-              <div class="fg" style="flex:2;">
-                <label>Goal Name</label>
-                <input type="text" id="newGoalName" placeholder="Emergency Fund, Vacation…"
-                  onkeydown="if(event.key==='Enter')saveNewGoal();if(event.key==='Escape')closeAddGoalForm()">
-              </div>
-              <div class="fg">
-                <label>Monthly ($)</label>
-                <input type="number" id="newGoalAmount" placeholder="0.00" step="0.01" min="0"
-                  onkeydown="if(event.key==='Enter')saveNewGoal();if(event.key==='Escape')closeAddGoalForm()">
-              </div>
-              <div class="fg">
-                <label>Target Total ($)</label>
-                <input type="number" id="newGoalTarget" placeholder="Optional" step="0.01" min="0"
-                  onkeydown="if(event.key==='Enter')saveNewGoal();if(event.key==='Escape')closeAddGoalForm()">
-              </div>
-            </div>
-            <div style="display:flex;gap:8px;">
-              <button class="btn btn-green btn-sm" onclick="saveNewGoal()">Add Goal</button>
-              <button class="btn btn-sm" onclick="closeAddGoalForm()">Cancel</button>
-            </div>
-          </div>
-
-          <!-- Goals list -->
-          <div id="savingsGoalsList"></div>
-
-          <!-- Totals -->
-          <div id="savingsGoalsTotal" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:none;">
-            <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:13px;margin-bottom:4px;">
-              <span style="color:var(--text3);">Allocated</span><span id="savingsGoalsAllocated">$0.00</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:13px;">
-              <span style="color:var(--text3);">Unallocated</span><span id="savingsGoalsUnallocated" style="color:var(--green);">$0.00</span>
-            </div>
-          </div>
-        </div>
-
         <div class="card">
           <div class="card-hdr"><div class="card-title">Safety Buffer</div></div>
           <div class="card-sub">Your minimum safe balance. If rollover + remaining daily allowance drops below this number, a warning appears on the dashboard. Example: buffer = $100, you have $80 left → red alert. It never locks spending — it just flags when you're close to $0 so you can act before it's too late.</div>
@@ -1116,14 +997,13 @@ select option{background:var(--bg3);}
 // STATE
 // ════════════════════════════════════════════════════════════
 const DEF = {
-  income: { mode:'fixed', frequency:'weekly', primary:0, hourlyRate:0, weeklyHours:40, irregular:[], log:[], jobs:[], tips:[] },
+  income: { mode:'fixed', frequency:'weekly', primary:0, hourlyRate:0, weeklyHours:40, irregular:[], log:[] },
   bills: [],
   savings: { type:'percent', amount:10 },
   settings: { minBuffer:100, rollover:0 },
   transactions: [],
   billPaid: {},
-  googleUser: null,
-  savingsGoals: []
+  googleUser: null
 };
 let S = deepClone(DEF);
 let calDate = new Date();
@@ -1170,358 +1050,6 @@ function toMonthly(amount,freq){
   return amount;
 }
 
-
-// ════════════════════════════════════════════════════════════
-// PAYCHECK MODE — Named Jobs + Tips + Bill Assignment
-// ════════════════════════════════════════════════════════════
-
-// ── Helpers ──────────────────────────────────────────────────
-function isPaycheckMode(){ return S.income.mode==='paycheck'; }
-
-// How many checks per month across all jobs
-function checksPerMonth(){
-  const jobs=S.income.jobs||[];
-  return jobs.reduce((s,j)=>{
-    if(j.frequency==='weekly')    return s+4;
-    if(j.frequency==='biweekly')  return s+2;
-    if(j.frequency==='monthly')   return s+1;
-    return s+2;
-  },0);
-}
-
-// Weekly spending fund (paycheck mode)
-function calcWeeklyFund(){
-  const monthly = calcMonthlyIncome();
-  const monthlyBills = S.bills.reduce((s,b)=>{
-    if(b.frequency==='monthly')  return s+b.amount;
-    if(b.frequency==='weekly')   return s+b.amount*4;
-    if(b.frequency==='yearly')   return s+b.amount/12;
-    return s+b.amount;
-  },0);
-  const monthlySavings = calcSavings(monthly);
-  return Math.max(0, (monthly - monthlyBills - monthlySavings) / 4.33);
-}
-
-// Per-check bill share
-function billsPerCheck(){
-  const cpm = checksPerMonth();
-  if(!cpm) return 0;
-  const monthlyBills = S.bills.reduce((s,b)=>{
-    if(b.frequency==='monthly')  return s+b.amount;
-    if(b.frequency==='weekly')   return s+b.amount*4;
-    if(b.frequency==='yearly')   return s+b.amount/12;
-    return s+b.amount;
-  },0);
-  return monthlyBills / cpm;
-}
-
-// Update the check slot dropdown in bill form
-function updateCheckSlotOptions(){
-  const wrap=document.getElementById('bf_check_slot_wrap');
-  const sel=document.getElementById('bf_check_slot');
-  if(!wrap||!sel) return;
-  if(!isPaycheckMode()){ wrap.style.display='none'; return; }
-  wrap.style.display='';
-  const jobs=S.income.jobs||[];
-  const options=['<option value="">Unassigned</option>'];
-  jobs.forEach(j=>{
-    const checksThisJob = j.frequency==='weekly'?4:j.frequency==='monthly'?1:2;
-    for(let i=1;i<=checksThisJob;i++){
-      const label=jobs.length>1?`${j.name} – Check ${i}`:`Check ${i} of month`;
-      options.push(`<option value="${j.id}_${i}">${label}</option>`);
-    }
-  });
-  sel.innerHTML=options.join('');
-}
-
-// ── Jobs ─────────────────────────────────────────────────────
-function renderJobsList(){
-  const el=document.getElementById('jobsList');
-  if(!el) return;
-  if(!S.income.jobs) S.income.jobs=[];
-
-  // Always show add-job form at top
-  const addForm=`<div id="addJobForm" style="display:none;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);padding:14px;margin-bottom:14px;">
-    <div class="form-row" style="margin-bottom:10px;">
-      <div class="fg" style="flex:2;"><label>Job Name</label>
-        <input type="text" id="newJobName" placeholder="Walmart, McDonalds…"
-          onkeydown="if(event.key==='Enter')saveNewJob();if(event.key==='Escape')closeAddJobForm()"></div>
-      <div class="fg"><label>Pay Frequency</label>
-        <select id="newJobFreq">
-          <option value="biweekly">Bi-weekly</option>
-          <option value="weekly">Weekly</option>
-          <option value="monthly">Monthly</option>
-        </select></div>
-      <div class="fg"><label>Expected Amount ($)</label>
-        <input type="number" id="newJobExpected" placeholder="0.00" step="0.01" min="0"
-          onkeydown="if(event.key==='Enter')saveNewJob();if(event.key==='Escape')closeAddJobForm()"></div>
-    </div>
-    <div style="display:flex;gap:8px;">
-      <button class="btn btn-green btn-sm" onclick="saveNewJob()">Add Job</button>
-      <button class="btn btn-sm" onclick="closeAddJobForm()">Cancel</button>
-    </div>
-  </div>`;
-
-  if(!S.income.jobs.length){
-    el.innerHTML=addForm+'<div style="color:var(--text3);font-size:13px;padding:8px 0;">No jobs yet. Use "+ Add Job" to get started.</div>';
-    return;
-  }
-
-  const now=new Date();
-  const monthStr=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const wkStart=new Date(now); wkStart.setDate(now.getDate()-now.getDay()); wkStart.setHours(0,0,0,0);
-
-  const jobsHtml=S.income.jobs.map((job,ji)=>{
-    const checks=job.checks||[];
-    const monthTotal=checks.filter(ch=>ch.date.startsWith(monthStr)).reduce((s,c)=>s+c.amount,0);
-    const wkChecks=checks.filter(ch=>new Date(ch.date+'T00:00:00')>=wkStart);
-    const wkTotal=wkChecks.reduce((s,c)=>s+c.amount,0);
-    const recent=checks.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
-    const freqLabel={weekly:'Weekly',biweekly:'Bi-weekly',monthly:'Monthly'}[job.frequency]||job.frequency;
-
-    return `<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius2);padding:14px;margin-bottom:12px;">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;">
-        <div>
-          <div style="font-size:15px;font-weight:700;">${job.name}</div>
-          <div style="font-size:12px;color:var(--text3);font-family:var(--mono);margin-top:2px;">${freqLabel}${job.expected?' · Expected ~'+fmt(job.expected):''}</div>
-        </div>
-        <div style="display:flex;gap:6px;align-items:center;">
-          <div style="text-align:right;">
-            <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green);">${fmt(wkTotal)}<span style="font-size:10px;color:var(--text3);font-weight:400;">/wk</span></div>
-            <div style="font-size:11px;color:var(--text3);">${fmt(monthTotal)} this month</div>
-          </div>
-          <button class="btn btn-sm btn-green" onclick="toggleLogCheckForm('${job.id}')">+ Check</button>
-          <button class="btn btn-sm btn-red" onclick="removeJob('${job.id}')">✕</button>
-        </div>
-      </div>
-
-      <!-- Inline log check form -->
-      <div id="logCheckForm_${job.id}" style="display:none;background:var(--bg3);border-radius:var(--radius);padding:12px;margin-bottom:10px;border:1px solid var(--border2);">
-        <div class="form-row" style="margin-bottom:8px;">
-          <div class="fg"><label>Amount ($)</label>
-            <input type="number" id="lc_amt_${job.id}" placeholder="0.00" step="0.01" min="0"
-              onkeydown="if(event.key==='Enter')saveLogCheck('${job.id}');if(event.key==='Escape')toggleLogCheckForm('${job.id}')"></div>
-          <div class="fg"><label>Date</label>
-            <input type="date" id="lc_date_${job.id}" value="${todayStr()}"></div>
-          <div class="fg"><label>Note (optional)</label>
-            <input type="text" id="lc_note_${job.id}" placeholder="Regular check, bonus…"
-              onkeydown="if(event.key==='Enter')saveLogCheck('${job.id}');if(event.key==='Escape')toggleLogCheckForm('${job.id}')"></div>
-        </div>
-        <div style="display:flex;gap:8px;">
-          <button class="btn btn-green btn-sm" onclick="saveLogCheck('${job.id}')">Log Check</button>
-          <button class="btn btn-sm" onclick="toggleLogCheckForm('${job.id}')">Cancel</button>
-        </div>
-      </div>
-
-      <!-- Check history -->
-      ${recent.length?`<div style="border-top:1px solid var(--border);padding-top:8px;">
-        <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:6px;">RECENT CHECKS</div>
-        ${recent.map(ch=>`
-          <div id="check_row_${ch.id}" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
-            <div id="check_view_${ch.id}" style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;">
-              <span style="font-family:var(--mono);font-size:12px;color:var(--text3);flex-shrink:0;">${ch.date}</span>
-              <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green);">+${fmt(ch.amount)}</span>
-              ${ch.note?`<span style="font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${ch.note}</span>`:''}
-            </div>
-            <div id="check_edit_${ch.id}" style="display:none;flex:1;display:none;">
-              <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-                <input type="number" id="ce_amt_${ch.id}" value="${ch.amount}" step="0.01" style="width:90px;font-size:12px;padding:4px 6px;"
-                  onkeydown="if(event.key==='Enter')saveCheckEdit('${job.id}','${ch.id}');if(event.key==='Escape')cancelCheckEdit('${ch.id}')"
-                  onblur="setTimeout(()=>{const r=document.getElementById('check_edit_${ch.id}');if(r&&r.style.display!=='none'&&!r.contains(document.activeElement))saveCheckEdit('${job.id}','${ch.id}');},150)">
-                <input type="date" id="ce_date_${ch.id}" value="${ch.date}" style="font-size:12px;padding:4px 6px;"
-                  onkeydown="if(event.key==='Enter')saveCheckEdit('${job.id}','${ch.id}');if(event.key==='Escape')cancelCheckEdit('${ch.id}')">
-                <input type="text" id="ce_note_${ch.id}" value="${ch.note||''}" placeholder="Note" style="flex:1;font-size:12px;padding:4px 6px;"
-                  onkeydown="if(event.key==='Enter')saveCheckEdit('${job.id}','${ch.id}');if(event.key==='Escape')cancelCheckEdit('${ch.id}')">
-                <button class="btn btn-xs btn-green" onclick="saveCheckEdit('${job.id}','${ch.id}')">✓</button>
-                <button class="btn btn-xs" onclick="cancelCheckEdit('${ch.id}')">✕</button>
-              </div>
-            </div>
-            <div style="display:flex;gap:4px;flex-shrink:0;">
-              <button class="btn btn-xs" onclick="startCheckEdit('${ch.id}')">✎</button>
-              <button class="btn btn-xs btn-red" onclick="removeCheck('${job.id}','${ch.id}')">✕</button>
-            </div>
-          </div>`).join('')}
-        ${checks.length>5?`<div style="font-size:11px;color:var(--text3);margin-top:4px;">+${checks.length-5} older entries</div>`:''}
-      </div>`:'<div style="font-size:12px;color:var(--text3);font-style:italic;">No checks logged yet.</div>'}
-    </div>`;
-  }).join('');
-
-  el.innerHTML=addForm+jobsHtml;
-}
-
-function addJob(){ toggleAddJobForm(); }
-function toggleAddJobForm(){
-  const f=document.getElementById('addJobForm');
-  if(f){ f.style.display=f.style.display==='none'?'block':'none'; if(f.style.display==='block') document.getElementById('newJobName')?.focus(); }
-}
-function closeAddJobForm(){
-  const f=document.getElementById('addJobForm');
-  if(f) f.style.display='none';
-  ['newJobName','newJobExpected'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
-}
-function saveNewJob(){
-  const name=(document.getElementById('newJobName')?.value||'').trim();
-  const freq=document.getElementById('newJobFreq')?.value||'biweekly';
-  const expected=parseFloat(document.getElementById('newJobExpected')?.value)||0;
-  if(!name) return;
-  if(!S.income.jobs) S.income.jobs=[];
-  S.income.jobs.push({id:Date.now().toString(),name,frequency:freq,expected,checks:[]});
-  saveState(); renderJobsList(); updateCheckSlotOptions(); renderIncomeView();
-}
-function removeJob(id){
-  if(!confirm('Remove this job and all its check history?')) return;
-  S.income.jobs=(S.income.jobs||[]).filter(j=>j.id!==id);
-  saveState(); renderJobsList(); updateCheckSlotOptions(); renderIncomeView();
-}
-
-function toggleLogCheckForm(jobId){
-  const f=document.getElementById('logCheckForm_'+jobId);
-  if(!f) return;
-  const open=f.style.display==='none';
-  f.style.display=open?'block':'none';
-  if(open){ const td=document.getElementById('lc_date_'+jobId); if(td) td.value=todayStr(); document.getElementById('lc_amt_'+jobId)?.focus(); }
-}
-function saveLogCheck(jobId){
-  const job=(S.income.jobs||[]).find(j=>j.id===jobId); if(!job) return;
-  const amount=parseFloat(document.getElementById('lc_amt_'+jobId)?.value||'0');
-  const date=document.getElementById('lc_date_'+jobId)?.value||todayStr();
-  const note=(document.getElementById('lc_note_'+jobId)?.value||'').trim();
-  if(!amount) return;
-  if(!job.checks) job.checks=[];
-  job.checks.push({id:Date.now().toString(),amount,date,note});
-  // Clear form
-  ['lc_amt_','lc_note_'].forEach(p=>{ const el=document.getElementById(p+jobId); if(el) el.value=''; });
-  toggleLogCheckForm(jobId);
-  saveState(); renderJobsList(); renderDashboard(); renderIncomeView();
-}
-
-function startCheckEdit(checkId){
-  document.getElementById('check_view_'+checkId).style.display='none';
-  const ed=document.getElementById('check_edit_'+checkId);
-  ed.style.display='flex'; ed.style.removeProperty('display'); // override inline display:none
-  ed.style.display='block';
-  document.getElementById('ce_amt_'+checkId)?.focus();
-}
-function cancelCheckEdit(checkId){
-  document.getElementById('check_view_'+checkId).style.display='flex';
-  document.getElementById('check_edit_'+checkId).style.display='none';
-}
-function saveCheckEdit(jobId,checkId){
-  const job=(S.income.jobs||[]).find(j=>j.id===jobId); if(!job) return;
-  const ch=(job.checks||[]).find(c=>c.id===checkId); if(!ch) return;
-  const amt=parseFloat(document.getElementById('ce_amt_'+checkId)?.value||'0');
-  const date=document.getElementById('ce_date_'+checkId)?.value||ch.date;
-  const note=(document.getElementById('ce_note_'+checkId)?.value||'').trim();
-  if(amt) ch.amount=amt; ch.date=date; ch.note=note;
-  saveState(); renderJobsList(); renderDashboard(); renderIncomeView();
-}
-function removeCheck(jobId,checkId){
-  const job=(S.income.jobs||[]).find(j=>j.id===jobId); if(!job) return;
-  job.checks=(job.checks||[]).filter(c=>c.id!==checkId);
-  saveState(); renderJobsList(); renderIncomeView(); renderDashboard();
-}
-
-// ── Tips ─────────────────────────────────────────────────────
-function openLogTips(){
-  const el=document.getElementById('addTipsForm');
-  if(el){ el.style.display=el.style.display==='none'?'block':'none'; if(el.style.display==='block') document.getElementById('tip_amt')?.focus(); }
-}
-function saveLogTip(){
-  const amount=parseFloat(document.getElementById('tip_amt')?.value||'0');
-  const date=document.getElementById('tip_date')?.value||todayStr();
-  const note=(document.getElementById('tip_note')?.value||'').trim();
-  if(!amount) return;
-  if(!S.income.tips) S.income.tips=[];
-  S.income.tips.push({id:Date.now().toString(),amount,date,note});
-  ['tip_amt','tip_note'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
-  document.getElementById('addTipsForm').style.display='none';
-  saveState(); renderTipsList(); renderDashboard(); renderIncomeView();
-}
-function removeTip(id){
-  S.income.tips=(S.income.tips||[]).filter(t=>t.id!==id);
-  saveState(); renderTipsList(); renderIncomeView(); renderDashboard();
-}
-function renderTipsList(){
-  const el=document.getElementById('tipsLogList');
-  const sumEl=document.getElementById('tipsSummary');
-  if(!el) return;
-  if(!S.income.tips) S.income.tips=[];
-  const now=new Date();
-  const wkStart=new Date(now); wkStart.setDate(now.getDate()-now.getDay()); wkStart.setHours(0,0,0,0);
-  const moStr=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const wkTotal=S.income.tips.filter(t=>new Date(t.date+'T00:00:00')>=wkStart).reduce((s,t)=>s+t.amount,0);
-  const moTotal=S.income.tips.filter(t=>t.date.startsWith(moStr)).reduce((s,t)=>s+t.amount,0);
-  const fourWkAgo=new Date(now); fourWkAgo.setDate(now.getDate()-28);
-  const recent4wk=S.income.tips.filter(t=>new Date(t.date+'T00:00:00')>=fourWkAgo);
-  const wkGroups={}; recent4wk.forEach(t=>{ const d=new Date(t.date+'T00:00:00'); const ws=new Date(d); ws.setDate(d.getDate()-d.getDay()); const wk=ws.toISOString().slice(0,10); if(!wkGroups[wk]) wkGroups[wk]=0; wkGroups[wk]+=t.amount; });
-  const wkVals=Object.values(wkGroups); const avg=wkVals.length?wkVals.reduce((s,v)=>s+v,0)/wkVals.length:0;
-  if(sumEl){ sumEl.style.display=S.income.tips.length?'block':'none'; const tw=document.getElementById('tipsWeek'); if(tw) tw.textContent=fmt(wkTotal); const tm=document.getElementById('tipsMonth'); if(tm) tm.textContent=fmt(moTotal); const ta=document.getElementById('tipsAvg'); if(ta) ta.textContent=fmt(avg)+'/wk'; }
-  if(!S.income.tips.length){ el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:8px 0;">No tips logged yet.</div>'; return; }
-  const recent=S.income.tips.slice().sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id)).slice(0,10);
-  el.innerHTML=`<div style="border-top:1px solid var(--border);padding-top:8px;margin-top:4px;">
-    <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:6px;">RECENT TIPS</div>
-    ${recent.map(t=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);">
-      <div><span style="font-family:var(--mono);font-size:12px;color:var(--text3);">${t.date}</span>${t.note?`<span style="font-size:12px;color:var(--text2);margin-left:8px;">${t.note}</span>`:''}</div>
-      <div style="display:flex;align-items:center;gap:8px;">
-        <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green);">+${fmt(t.amount)}</span>
-        <button class="btn btn-xs btn-red" onclick="removeTip('${t.id}')">✕</button>
-      </div>
-    </div>`).join('')}
-    ${S.income.tips.length>10?`<div style="font-size:11px;color:var(--text3);margin-top:6px;">+${S.income.tips.length-10} older entries</div>`:''}
-  </div>`;
-}
-
-// ── Paycheck dashboard stats ──────────────────────────────────
-function renderPaycheckDash(){
-  const el=document.getElementById('paycheckDashCard');
-  if(!el) return;
-  if(!isPaycheckMode()){ el.innerHTML=''; return; }
-
-  const income = calcMonthlyIncome();
-  const cpm    = checksPerMonth()||1;
-  const bpc    = billsPerCheck();
-  const spc    = calcSavings(income) / cpm;
-  const avgCheck = income / cpm;
-  const spendable = Math.max(0, avgCheck - bpc - spc);
-
-  // This week incoming
-  const now=new Date();
-  const wkStart=new Date(now); wkStart.setDate(now.getDate()-now.getDay()); wkStart.setHours(0,0,0,0);
-  const wkStr=wkStart.toISOString().slice(0,10);
-  const wkChecks=(S.income.jobs||[]).reduce((s,j)=>(j.checks||[]).filter(ch=>ch.date>=wkStr).reduce((ss,ch)=>ss+ch.amount,s),0);
-  const wkTips=(S.income.tips||[]).filter(t=>t.date>=wkStr).reduce((s,t)=>s+t.amount,0);
-  const wkIn=wkChecks+wkTips;
-
-  el.innerHTML=`<div class="card">
-    <div class="card-hdr">
-      <div class="card-title">Per-Check Breakdown</div>
-      <span style="font-family:var(--mono);font-size:11px;color:var(--text3);">${cpm} checks/month</span>
-    </div>
-    <div style="background:var(--bg3);border-radius:var(--radius);padding:14px;margin-top:10px;border:1px solid var(--border2);">
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);">
-        <span style="font-size:14px;color:var(--text2);">Avg check in</span>
-        <span style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--green);">~${fmt(avgCheck)}</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);">
-        <span style="font-size:14px;color:var(--text2);">Bills reserve</span>
-        <span style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--red);">−${fmt(bpc)}</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);">
-        <span style="font-size:14px;color:var(--text2);">Savings reserve</span>
-        <span style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--blue);">−${fmt(spc)}</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0 2px 0;">
-        <span style="font-size:15px;font-weight:700;">Spendable per check</span>
-        <span style="font-family:var(--mono);font-size:20px;font-weight:700;color:${spendable<=0?'var(--red)':'var(--green)'};">${fmt(spendable)}</span>
-      </div>
-    </div>
-    ${wkIn>0?`<div style="margin-top:10px;padding:10px 14px;background:var(--gdim);border:1px solid var(--green2);border-radius:var(--radius);display:flex;justify-content:space-between;align-items:center;">
-      <span style="font-size:13px;color:var(--text2);">This week — checks + tips</span>
-      <span style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--green);">+${fmt(wkIn)}</span>
-    </div>`:''}
-  </div>`;
-}
-
 function calcMonthlyIncome(){
   const im = S.income;
   let base = 0;
@@ -1529,15 +1057,6 @@ function calcMonthlyIncome(){
     base = toMonthly(im.primary||0, im.frequency||'weekly');
   } else if(im.mode==='hourly'){
     base = (im.hourlyRate||0)*(im.weeklyHours||0)*52/12;
-  } else if(im.mode==='paycheck'){
-    // paycheck — sum all paychecks + tips this month
-    const now=new Date(); const y=now.getFullYear(),m=now.getMonth();
-    const monthStr=`${y}-${String(m+1).padStart(2,'0')}`;
-    const checkTotal=(S.income.jobs||[]).reduce((s,job)=>{
-      return s+(job.checks||[]).filter(ch=>ch.date.startsWith(monthStr)).reduce((ss,ch)=>ss+ch.amount,0);
-    },0);
-    const tipTotal=(S.income.tips||[]).filter(t=>t.date.startsWith(monthStr)).reduce((s,t)=>s+t.amount,0);
-    base=checkTotal+tipTotal;
   } else {
     // variable — sum income log for current month
     const now=new Date(); const y=now.getFullYear(),m=now.getMonth();
@@ -1723,15 +1242,8 @@ function renderDashboard(){
 
   // Alert banners
   let alertHtml='';
-  const daysToRecover = safe<0 ? Math.ceil(Math.abs(safe)/daily) : 0;
-  if(safe<0){
-    alertHtml=`<div class="alert r" style="margin-bottom:0;">
-      <div>
-        <div style="font-weight:700;margin-bottom:4px;">⚠ Spending Deficit — You are currently $${Math.abs(safe).toFixed(2)} over your available balance.</div>
-        <div style="font-size:12px;opacity:.9;line-height:1.6;">Your daily allowance of ${fmt(daily)} will gradually offset this over time. At current pace, you'll recover in approximately <strong>${daysToRecover} day${daysToRecover!==1?'s':''}</strong> if no further spending occurs. Your bills and savings are unaffected — they are calculated before your spending fund and remain fully protected.</div>
-      </div>
-    </div>`;
-  } else if(totalLiq<buffer) alertHtml=`<div class="alert y" style="margin-bottom:0;">◆ LOW BUFFER — Spending balance is approaching your safety minimum. Proceed with caution.</div>`;
+  if(totalLiq<buffer) alertHtml=`<div class="alert r" style="margin-bottom:0;">⚠ LOW BUFFER — Spending balance is critically low. Proceed carefully.</div>`;
+  else if(totalLiq<buffer*2) alertHtml=`<div class="alert y" style="margin-bottom:0;">◆ Approaching minimum buffer. Watch spending today.</div>`;
   document.getElementById('alertBanner').innerHTML=alertHtml;
 
   document.getElementById('dashDate').textContent=new Date().toLocaleDateString('en-US',{weekday:'short',month:'long',day:'numeric'});
@@ -1739,45 +1251,7 @@ function renderDashboard(){
   const safeC=safe<0?'r':safe<daily*.3?'y':'g';
   const rollC=roll<0?'r':roll<daily*3?'y':'g';
 
-  document.getElementById('statGrid').innerHTML = isPaycheckMode() ? `
-    <div class="stat" data-tip="Total checks + tips received this week.">
-      <div class="stat-lbl">Income This Week</div>
-      <div class="stat-val" style="color:var(--green);">${fmt((() => {
-        const now=new Date(), wkStart=new Date(now); wkStart.setDate(now.getDate()-now.getDay()); wkStart.setHours(0,0,0,0);
-        const wkStr=wkStart.toISOString().slice(0,10);
-        const checks=(S.income.jobs||[]).reduce((s,j)=>(j.checks||[]).filter(ch=>ch.date>=wkStr).reduce((ss,c)=>ss+c.amount,s),0);
-        const tips=(S.income.tips||[]).filter(t=>t.date>=wkStart.toISOString().slice(0,10)).reduce((s,t)=>s+t.amount,0);
-        return checks+tips;
-      })())}</div>
-      <div class="stat-sub">${checksPerMonth()} checks/month</div>
-    </div>
-    <div class="stat" style="cursor:pointer;" data-tip="Bills ÷ checks per month.\nSet this aside from every check before spending.">
-      <div class="stat-lbl">Bills/Check</div>
-      <div class="stat-val" style="color:var(--red);">${fmt(billsPerCheck())}</div>
-      <div class="stat-sub">${S.bills.length} bill${S.bills.length!==1?'s':''}</div>
-    </div>
-    <div class="stat b" data-tip="Savings contribution per check.\nSet aside with bills before spending.">
-      <div class="stat-lbl">Savings/Check</div>
-      <div class="stat-val" style="color:var(--blue);">${fmt(calcSavings(income)/checksPerMonth())}</div>
-      <div class="stat-sub">${fmt(calcSavings(income))}/month</div>
-    </div>
-    <div class="stat" data-tip="Weekly spending fund after bills and savings.">
-      <div class="stat-lbl">Weekly Fund</div>
-      <div class="stat-val">${fmt(calcWeeklyFund())}</div>
-      <div class="stat-sub" id="fundSubText"></div>
-      <div class="prog-track" style="margin-top:6px;"><div class="prog-fill" id="fundProg" style="width:0%;background:var(--blue);"></div></div>
-    </div>
-    <div class="stat" data-tip="Daily spending allowance.">
-      <div class="stat-lbl">Daily Allowance</div>
-      <div class="stat-val">${fmt(daily)}</div>
-      <div class="stat-sub">per day</div>
-    </div>
-    <div class="stat" data-tip="Safe to spend today including rollover.">
-      <div class="stat-lbl">Safe to Spend</div>
-      <div class="stat-val" style="color:${safe<0?'var(--red)':safe<buffer?'var(--yellow)':'var(--green)'};">${fmtS(safe)}</div>
-      <div class="stat-sub">${fmtS(roll)} rollover</div>
-    </div>
-  ` : `
+  document.getElementById('statGrid').innerHTML=`
     <div class="stat" data-tip="Total monthly income from all sources.\n${S.income.mode==='variable'?'Variable mode: sum of income logged this month.':S.income.mode==='hourly'?'Hourly: rate × hours × 52 ÷ 12.':'Fixed income converted to monthly.'}">
       <div class="stat-lbl">Monthly Income</div>
       <div class="stat-val">${fmt(income)}</div>
@@ -1788,25 +1262,30 @@ function renderDashboard(){
       <div class="stat-val">${fmt(bills)}</div>
       <div class="stat-sub">${S.bills.length} bill${S.bills.length!==1?'s':''}</div>
     </div>
-    <div class="stat b" data-tip="Locked savings.\nDeducted after bills, before spending.">
+    <div class="stat b" data-tip="Locked savings.\nDeducted after bills, before spending.\nCannot be accessed by rollover.">
       <div class="stat-lbl">Savings Goal</div>
       <div class="stat-val">${fmt(sav)}</div>
       <div class="stat-sub">${S.savings.type==='percent'?S.savings.amount+'% of income':'fixed'}</div>
     </div>
-    <div class="stat" data-tip="Money left for daily spending after bills and savings.">
+    <div class="stat" data-tip="Money left for daily spending after bills and savings. Progress bar shows days elapsed this month.">
       <div class="stat-lbl">Spending Fund</div>
       <div class="stat-val">${fmt(fund)}</div>
       <div class="stat-sub" id="fundSubText">÷ ${currentMonthDays()} days</div>
       <div class="prog-track" style="margin-top:6px;"><div class="prog-fill" id="fundProg" style="width:0%;background:var(--blue);"></div></div>
     </div>
-    <div class="stat" data-tip="Your spending allowance per day after bills and savings.">
+    <div class="stat" data-tip="Base daily limit from spending fund alone.\nDoes not include rollover yet.">
       <div class="stat-lbl">Daily Allowance</div>
       <div class="stat-val">${fmt(daily)}</div>
       <div class="stat-sub">per day</div>
     </div>
-    <div class="stat" data-tip="Safe to spend today.\nIncludes today's allowance plus/minus rollover.\nStays positive as long as you spend at or below your daily allowance.">
-      <div class="stat-lbl">Safe to Spend</div>
-      <div class="stat-val" style="color:${safe<0?'var(--red)':safe<buffer?'var(--yellow)':'var(--green)'};">${fmtS(safe)}</div>
+    <div class="stat ${rollC}" data-tip="Unused daily allowance carried forward.\nNever touches savings.\nNegative means you've overspent on a previous day.">
+      <div class="stat-lbl">Rollover</div>
+      <div class="stat-val">${fmtS(roll)}</div>
+      <div class="stat-sub">${roll>=0?'banked':'deficit'}</div>
+    </div>
+    <div class="stat ${safeC} wide" data-tip="Daily allowance + rollover − spent today.\nExactly how much you can spend right now.">
+      <div class="stat-lbl">Safe to Spend Today</div>
+      <div class="stat-val">${fmtS(safe)}</div>
       <div class="stat-sub">${fmt(daily)} allowance + ${fmtS(roll)} rollover − ${fmt(getTodaySpent())} spent</div>
     </div>
   `;
@@ -1814,17 +1293,11 @@ function renderDashboard(){
 
   renderTodayPanel();
   renderUpcomingShort();
-  // Progress bar: transactions spent vs total spending fund
-  const _now=new Date(); const _y=_now.getFullYear(),_m=_now.getMonth();
-  const _monthStart=new Date(_y,_m,1).toISOString().slice(0,8); // YYYY-MM-
-  const _monthSpent=S.transactions.filter(t=>t.date.startsWith(_monthStart.slice(0,7))).reduce((s,t)=>s+t.amount,0);
-  const _pct=fund>0?Math.min(100,Math.round((_monthSpent/fund)*100)):0;
-  const _rem=Math.max(0,fund-_monthSpent);
-  const _day=_now.getDate(),_dim=currentMonthDays();
-  const fsub=document.getElementById('fundSubText');
-  if(fsub) fsub.textContent=`${fmt(_rem)} left · ${fmt(_monthSpent)} spent`;
-  const fprog=document.getElementById('fundProg');
-  if(fprog){ fprog.style.width=_pct+'%'; fprog.style.background=_pct>90?'var(--red)':_pct>70?'var(--yellow)':'var(--blue)'; }
+  const _day=new Date().getDate(),_dim=currentMonthDays();
+  const _pct=Math.min(100,Math.round((_day-1)/_dim*100));
+  const _rem=Math.max(0,fund-daily*(_day-1));
+  const fsub=document.getElementById('fundSubText'); if(fsub) fsub.textContent=`${fmt(_rem)} left · day ${_day}/${_dim}`;
+  const fprog=document.getElementById('fundProg'); if(fprog) fprog.style.width=_pct+'%';
   updateSidebarWidget();
 }
 
@@ -1833,20 +1306,10 @@ function renderTodayPanel(){
   const txs=S.transactions.filter(t=>t.date===k).reverse();
   const spent=getTodaySpent(), daily=calcDailyAllowance(), roll=S.settings.rollover||0, rem=calcSafeToSpend();
   const el=document.getElementById('todayActivity');
-  const isMob=window.innerWidth<=680;
   el.innerHTML=txs.length?txs.slice(0,5).map(t=>`
-    <div class="${isMob?'swipe-row':''}" data-txid="${t.id}">
-      ${isMob?'<div class="swipe-bg right">🗑 Delete</div><div class="swipe-bg left">✎ Edit</div>':''}
-      <div class="${isMob?'swipe-content':''}" ondblclick="startEditTx('${t.id}');renderDashboard()"
-        style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);cursor:default;${isMob?'background:var(--bg2);':''}"
-        title="Double-click to edit">
-        <div style="flex:1;min-width:0;"><div style="font-size:13px;">${t.desc}</div><div style="font-size:11px;color:var(--text3);">${t.category}</div></div>
-        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-          <div style="font-family:var(--mono);color:var(--red);font-size:13px;">−${fmt(t.amount)}</div>
-          ${!isMob?`<button class="btn btn-xs" onclick="event.stopPropagation();startEditTx('${t.id}')" title="Edit">✎</button>
-          <button class="btn btn-xs btn-red" onclick="event.stopPropagation();removeTransaction('${t.id}')" title="Delete">✕</button>`:''}
-        </div>
-      </div>
+    <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);">
+      <div><div style="font-size:13px;">${t.desc}</div><div style="font-size:11px;color:var(--text3);">${t.category}</div></div>
+      <div style="font-family:var(--mono);color:var(--red);">−${fmt(t.amount)}</div>
     </div>`).join('')
   :`<div style="color:var(--text3);font-size:13px;padding:8px 0;">No transactions today.</div>`;
   // Populate footer labels
@@ -1907,8 +1370,8 @@ function renderUpcomingShort(){
   el.innerHTML=monthBills.map(x=>{
     const dateStr=`${y}-${String(m+1).padStart(2,'0')}-${String(x.date.getDate()).padStart(2,'0')}`;
     const paid=isBillPaid(x.bill,dateStr);
-    const col=paid?'g':(!paid&&x.days<0)?'r':x.days<=7?'y':'muted';
-    const lbl=paid?'Paid':x.days===0?'Today':(!paid&&x.days<0)?`${Math.abs(x.days)}d overdue`:`in ${x.days}d`;
+    const col=paid?'g':x.days<0?'r':x.days<=7?'y':'muted';
+    const lbl=paid?'Paid':x.days===0?'Today':(!paid&&x.days<0)?`${Math.abs(x.days)}d overdue`:`${x.days}d`;
     return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);${paid?'opacity:.55':''}">
       <div style="flex:1;min-width:0;">
         <div style="font-size:13px;${paid?'text-decoration:line-through;':''}">${x.bill.name}</div>
@@ -1968,8 +1431,8 @@ function renderCalendar(){
         const c=paid?'g':days<=0?'r':days<=7?'y':'g';
         const colorVar=paid?'var(--green)':days<=0?'var(--red)':days<=7?'var(--yellow)':'var(--green)';
         return `<div style="display:flex;align-items:center;gap:3px;margin-top:2px;overflow:hidden;">
-          <div style="width:6px;height:6px;border-radius:50%;background:${colorVar};flex-shrink:0;"></div>
-          <div style="font-size:10px;font-weight:500;color:${colorVar};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4;font-family:var(--mono);">${b.name} <span style="font-weight:400;opacity:.85;">${fmt(b.amount)}</span></div>
+          <div style="width:5px;height:5px;border-radius:50%;background:${colorVar};flex-shrink:0;"></div>
+          <div style="font-size:9px;color:${colorVar};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3;font-family:var(--mono);">${b.name} <span style="opacity:.7;">${fmt(b.amount)}</span></div>
         </div>`;
       }).join('');
       html+=`<div class="cal-day${isToday?' today':''}" data-day="${day}" onclick="showCalPopup(event,${day},${m},${y})">
@@ -2111,7 +1574,6 @@ const MODES=[
   {id:'fixed',ico:'📅',title:'Fixed',desc:'Regular paycheck on a weekly or monthly schedule.'},
   {id:'hourly',ico:'⏱',title:'Hourly',desc:'Set your rate and expected hours to project income.'},
   {id:'variable',ico:'📊',title:'Variable',desc:'Log actual income as it arrives. Allowance adjusts in real time.'},
-  {id:'paycheck',ico:'💵',title:'Paycheck',desc:'Multiple jobs with named paychecks + tip tracking. Best for shift workers.'},
 ];
 
 function renderIncomeView(){
@@ -2159,15 +1621,12 @@ function renderIncomeView(){
   document.getElementById('incMonthlyEq').textContent=fmt(eq);
   const yr=document.getElementById('incYearlyEq'); if(yr) yr.textContent=fmt(eq*12);
   const f5=document.getElementById('inc5yrEq'); if(f5) f5.textContent=fmt(eq*12*5);
-  const notes={fixed:'Primary + additional income per month',hourly:`${S.income.hourlyRate||0}/hr × ${S.income.weeklyHours||0} hrs/wk × 52÷12`,variable:'Sum of income logged this calendar month',paycheck:'All paychecks + tips logged this calendar month'};
+  const notes={fixed:'Primary + additional income per month',hourly:`${S.income.hourlyRate||0}/hr × ${S.income.weeklyHours||0} hrs/wk × 52÷12`,variable:'Sum of income logged this calendar month'};
   document.getElementById('incMonthlyNote').textContent=notes[S.income.mode]||'';
 
-  // Show/hide mode-specific cards
+  // Income log card
   document.getElementById('incomeLogCard').style.display=S.income.mode==='variable'?'block':'none';
-  document.getElementById('paycheckCard').style.display=S.income.mode==='paycheck'?'block':'none';
-  document.getElementById('tipsCard').style.display=S.income.mode==='paycheck'?'block':'none';
-  if(S.income.mode==='variable') renderIncomeLog();
-  if(S.income.mode==='paycheck'){ renderJobsList(); renderTipsList(); }
+  renderIncomeLog();
 }
 
 function setIncMode(mode){
@@ -2231,8 +1690,6 @@ function openEditBill(id){
   document.getElementById('bf_name').value=b.name; document.getElementById('bf_amount').value=b.amount;
   document.getElementById('bf_freq').value=b.frequency; document.getElementById('bf_due').value=b.due;
   document.getElementById('bf_cat').value=b.category||'Other';
-  updateCheckSlotOptions();
-  const cs=document.getElementById('bf_check_slot'); if(cs) cs.value=b.checkSlot||'';
   document.getElementById('billFormCard').style.display='block';
 }
 function closeBillForm(){ document.getElementById('billFormCard').style.display='none'; editBillId=null; }
@@ -2242,9 +1699,8 @@ function saveBill(){
   const frequency=document.getElementById('bf_freq').value;
   const due=parseInt(document.getElementById('bf_due').value)||1;
   const category=document.getElementById('bf_cat').value;
-  const checkSlot=document.getElementById('bf_check_slot')?.value||'';
   if(!name||!amount){ alert('Name and amount required.'); return; }
-  if(editBillId){ const i=S.bills.findIndex(b=>b.id===editBillId); if(i>=0) S.bills[i]={...S.bills[i],name,amount,frequency,due,category,checkSlot}; }
+  if(editBillId){ const i=S.bills.findIndex(b=>b.id===editBillId); if(i>=0) S.bills[i]={...S.bills[i],name,amount,frequency,due,category}; }
   else S.bills.push({id:Date.now().toString(),name,amount,frequency,due,category});
   saveState(); closeBillForm(); renderBills(); renderDashboard();
 }
@@ -2254,7 +1710,7 @@ function renderBills(){
   const el=document.getElementById('billsTable');
   if(!S.bills.length){ el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:8px 0;">No bills yet.</div>'; return; }
   el.innerHTML=`<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Name</th><th>Category</th><th>Freq</th><th>Due</th><th style="text-align:right">Amount</th><th style="text-align:right">Monthly</th><th></th></tr></thead><tbody>
-    ${S.bills.map(b=>`<tr ondblclick="openEditBill('${b.id}')" style="cursor:pointer;" title="Double-click to edit">
+    ${S.bills.map(b=>`<tr>
       <td>${b.name}</td><td><span class="badge muted">${b.category||'—'}</span></td>
       <td style="font-size:12px;">${b.frequency}</td><td style="font-family:var(--mono);font-size:12px;">Day ${b.due}</td>
       <td style="font-family:var(--mono);text-align:right;">${fmt(b.amount)}</td>
@@ -2275,182 +1731,14 @@ function setSavType(t){
   saveState(); // do NOT call renderSavingsView here — that would recurse
 }
 function saveSavings(){ S.savings.amount=parseFloat(document.getElementById('sav_val').value)||0; saveState(); renderSavingsView(); renderDashboard(); }
-
-// ── Savings Allocations ──────────────────────────────────────
-function openAddGoalForm(){
-  const f=document.getElementById('addGoalForm');
-  if(f){ f.style.display='block'; document.getElementById('newGoalName')?.focus(); }
-}
-function closeAddGoalForm(){
-  const f=document.getElementById('addGoalForm');
-  if(f) f.style.display='none';
-  ['newGoalName','newGoalAmount','newGoalTarget'].forEach(id=>{
-    const el=document.getElementById(id); if(el) el.value='';
-  });
-}
-function saveNewGoal(){
-  const name=(document.getElementById('newGoalName')?.value||'').trim();
-  const amount=parseFloat(document.getElementById('newGoalAmount')?.value)||0;
-  const target=parseFloat(document.getElementById('newGoalTarget')?.value)||0;
-  if(!name){ document.getElementById('newGoalName')?.focus(); return; }
-  if(!S.savingsGoals) S.savingsGoals=[];
-  const colors=['var(--blue)','var(--green)','var(--purple)','var(--yellow)','var(--red)'];
-  S.savingsGoals.push({
-    id:Date.now().toString(),
-    name, amount, target, saved:0,
-    color:colors[S.savingsGoals.length%colors.length]
-  });
-  saveState();
-  closeAddGoalForm();
-  renderSavingsGoals();
-}
-
-function removeSavingsGoal(i){
-  if(!confirm('Remove this goal?')) return;
-  S.savingsGoals.splice(i,1);
-  saveState(); renderSavingsGoals();
-}
-
-function renderSavingsGoals(){
-  if(!S.savingsGoals) S.savingsGoals=[];
-  const monthly=calcSavings(calcMonthlyIncome());
-  const el=document.getElementById('savingsGoalsList');
-  const totEl=document.getElementById('savingsGoalsTotal');
-  if(!el) return;
-
-  if(!S.savingsGoals.length){
-    el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:8px 0;">No goals yet. Use "+ Goal" to start allocating.</div>';
-    if(totEl) totEl.style.display='none';
-    return;
-  }
-
-  const allocated=S.savingsGoals.reduce((s,g)=>s+(g.amount||0),0);
-  const unalloc=monthly-allocated;
-
-  el.innerHTML=S.savingsGoals.map((g,i)=>{
-    const pct=monthly>0?Math.min(100,Math.round((g.amount/monthly)*100)):0;
-    const saved=g.saved||0;
-    const targetPct=g.target>0?Math.min(100,Math.round((saved/g.target)*100)):0;
-    const barPct=g.target>0?targetPct:pct;
-    const barColor=g.color||'var(--blue)';
-    return `<div id="goal-row-${i}" style="padding:12px;background:var(--bg3);border-radius:var(--radius);margin-bottom:8px;border:1px solid var(--border2);">
-      <!-- View mode -->
-      <div id="goal-view-${i}">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-          <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;">
-            <div style="width:10px;height:10px;border-radius:50%;background:${barColor};flex-shrink:0;"></div>
-            <span style="font-size:14px;font-weight:600;">${g.name}</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-            <span style="font-family:var(--mono);font-size:13px;color:var(--blue);">${fmt(g.amount||0)}<span style="font-size:11px;color:var(--text3);">/mo</span></span>
-            <button class="btn btn-xs" onclick="startEditGoal(${i})" title="Edit">✎</button>
-            <button class="btn btn-xs btn-red" onclick="removeSavingsGoal(${i})">✕</button>
-          </div>
-        </div>
-        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text3);margin-bottom:4px;">
-          <span>${pct}% of monthly savings${g.target>0?' · Target: '+fmt(g.target):''}</span>
-          ${g.target>0?`<span style="color:var(--text2);">${fmt(saved)} saved (${targetPct}%)</span>`:''}
-        </div>
-        <div class="prog-track">
-          <div class="prog-fill" style="width:${barPct}%;background:${barColor};"></div>
-        </div>
-      </div>
-      <!-- Edit mode (hidden) -->
-      <div id="goal-edit-${i}" style="display:none;">
-        <div class="form-row" style="margin-bottom:8px;">
-          <div class="fg" style="flex:2;">
-            <label>Goal Name</label>
-            <input type="text" id="ge-name-${i}" value="${g.name}"
-              onkeydown="if(event.key==='Enter')saveEditGoal(${i});if(event.key==='Escape')cancelEditGoal(${i})"
-              onblur="scheduleGoalSave(${i})">
-          </div>
-          <div class="fg">
-            <label>Monthly ($)</label>
-            <input type="number" id="ge-amt-${i}" value="${g.amount||0}" step="0.01" min="0"
-              onkeydown="if(event.key==='Enter')saveEditGoal(${i});if(event.key==='Escape')cancelEditGoal(${i})"
-              onblur="scheduleGoalSave(${i})">
-          </div>
-          <div class="fg">
-            <label>Target ($)</label>
-            <input type="number" id="ge-target-${i}" value="${g.target||0}" step="0.01" min="0"
-              onkeydown="if(event.key==='Enter')saveEditGoal(${i});if(event.key==='Escape')cancelEditGoal(${i})"
-              onblur="scheduleGoalSave(${i})">
-          </div>
-          <div class="fg">
-            <label>Saved ($)</label>
-            <input type="number" id="ge-saved-${i}" value="${g.saved||0}" step="0.01" min="0"
-              onkeydown="if(event.key==='Enter')saveEditGoal(${i});if(event.key==='Escape')cancelEditGoal(${i})"
-              onblur="scheduleGoalSave(${i})">
-          </div>
-        </div>
-        <div style="display:flex;gap:6px;">
-          <button class="btn btn-green btn-sm" onclick="saveEditGoal(${i})">Save</button>
-          <button class="btn btn-sm" onclick="cancelEditGoal(${i})">Cancel</button>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
-
-  if(totEl){
-    totEl.style.display='block';
-    const al=document.getElementById('savingsGoalsAllocated');
-    const un=document.getElementById('savingsGoalsUnallocated');
-    if(al) al.textContent=fmt(allocated);
-    if(un){ un.textContent=fmtS(unalloc); un.style.color=unalloc<0?'var(--red)':'var(--green)'; }
-  }
-}
-
-let _goalSaveTimer={};
-function scheduleGoalSave(i){
-  clearTimeout(_goalSaveTimer[i]);
-  _goalSaveTimer[i]=setTimeout(()=>{
-    const editEl=document.getElementById('goal-edit-'+i);
-    if(editEl&&editEl.style.display!=='none'&&!editEl.contains(document.activeElement)){
-      saveEditGoal(i);
-    }
-  },200);
-}
-
-function startEditGoal(i){
-  document.getElementById('goal-view-'+i).style.display='none';
-  document.getElementById('goal-edit-'+i).style.display='block';
-  document.getElementById('ge-name-'+i)?.focus();
-}
-
-function saveEditGoal(i){
-  const g=S.savingsGoals[i]; if(!g) return;
-  const name=(document.getElementById('ge-name-'+i)?.value||'').trim();
-  const amount=parseFloat(document.getElementById('ge-amt-'+i)?.value)||0;
-  const target=parseFloat(document.getElementById('ge-target-'+i)?.value)||0;
-  const saved=parseFloat(document.getElementById('ge-saved-'+i)?.value)||0;
-  if(!name) return;
-  g.name=name; g.amount=amount; g.target=target; g.saved=saved;
-  saveState(); renderSavingsGoals();
-}
-
-function cancelEditGoal(i){
-  document.getElementById('goal-view-'+i).style.display='block';
-  document.getElementById('goal-edit-'+i).style.display='none';
-}
-
 function renderSavingsView(){
-  if(!S.savingsGoals) S.savingsGoals=[];
   document.getElementById('sav_val').value=S.savings.amount||0;
   const _sm=calcSavings(calcMonthlyIncome());
   document.getElementById('savingsDisplay').textContent=fmt(_sm);
   const _syr=document.getElementById('savingsYearly'); if(_syr) _syr.textContent=fmt(_sm*12);
   const _s5=document.getElementById('savings5yr'); if(_s5) _s5.textContent=fmt(_sm*12*5);
-  const _spc=document.getElementById('savingsPerCheck');
-  const _spcw=document.getElementById('savingsPerCheckWrap');
-  if(_spc&&_spcw){
-    if(isPaycheckMode()&&checksPerMonth()>0){
-      _spc.textContent=fmt(_sm/checksPerMonth());
-      _spcw.style.display='';
-    } else { _spcw.style.display='none'; }
-  }
   setSavType(S.savings.type);
   document.getElementById('bufferVal').value=S.settings.minBuffer||100;
-  renderSavingsGoals();
 }
 
 // ════════════════════════════════════════════════════════════
@@ -2465,7 +1753,7 @@ function saveTransaction(){
   const date=document.getElementById('tx_date').value;
   if(!desc||!amount){ alert('Description and amount required.'); return; }
   S.transactions.push({id:Date.now().toString(),desc,amount,category,date});
-  recalcRollover(); saveState(); closeTxModal(); renderTracker(); renderDashboard(); if(document.getElementById("view-forecast")?.classList.contains("active")) renderForecast();
+  recalcRollover(); saveState(); closeTxModal(); renderTracker(); renderDashboard();
 }
 
 function logQuickSpend(){
@@ -2486,7 +1774,6 @@ function removeTransaction(id){
   if(gDriveToken){ clearTimeout(syncTimeout); saveToDrive(); }
   renderTracker();
   renderDashboard();
-  if(document.getElementById("view-forecast")?.classList.contains("active")) renderForecast();
 }
 
 
@@ -2501,7 +1788,7 @@ function saveEditTx(id){
   if(n) S.transactions[i].desc=n.value.trim()||S.transactions[i].desc;
   if(cat) S.transactions[i].category=cat.value;
   if(a) S.transactions[i].amount=parseFloat(a.value)||S.transactions[i].amount;
-  recalcRollover(); saveState(); renderTracker(); renderDashboard(); if(document.getElementById("view-forecast")?.classList.contains("active")) renderForecast();
+  recalcRollover(); saveState(); renderTracker(); renderDashboard();
 }
 
 function recalcRollover(){
@@ -2635,7 +1922,6 @@ function renderTracker(){
   });
 
   container.innerHTML=html;
-  setTimeout(()=>attachSwipe(container),50);
 
   // Summaries
   const now=new Date();
@@ -2656,21 +1942,16 @@ function renderTracker(){
 
 
 function _txRow(t){
-  const isMobile=window.innerWidth<=680;
-  return `<div class="swipe-row" data-txid="${t.id}">
-    <div class="swipe-bg right">🗑 Delete</div>
-    <div class="swipe-bg left">✎ Edit</div>
-    <div class="swipe-content" ondblclick="startEditTx('${t.id}')"
-      style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border);cursor:default;background:var(--bg2);min-height:44px;">
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:13px;">${t.desc}</div>
-        <span class="badge muted" style="margin-top:2px;">${t.category}</span>
-      </div>
-      <div style="font-family:var(--mono);font-size:13px;color:var(--red);flex-shrink:0;">−${fmt(t.amount)}</div>
-      <div style="display:flex;gap:4px;flex-shrink:0;">
-        ${isMobile?'':`<button class="btn btn-xs" onclick="event.stopPropagation();startEditTx('${t.id}')">✎</button>
-        <button class="btn btn-xs btn-red" onclick="event.stopPropagation();removeTransaction('${t.id}')">✕</button>`}
-      </div>
+  return `<div data-txid="${t.id}" ondblclick="startEditTx('${t.id}')"
+    style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border);cursor:default;background:var(--bg2);min-height:44px;">
+    <div style="flex:1;min-width:0;">
+      <div style="font-size:13px;">${t.desc}</div>
+      <span class="badge muted" style="margin-top:2px;">${t.category}</span>
+    </div>
+    <div style="font-family:var(--mono);font-size:13px;color:var(--red);flex-shrink:0;">−${fmt(t.amount)}</div>
+    <div style="display:flex;gap:4px;flex-shrink:0;">
+      <button class="btn btn-xs" onclick="event.stopPropagation();startEditTx('${t.id}')">✎</button>
+      <button class="btn btn-xs btn-red" onclick="event.stopPropagation();removeTransaction('${t.id}')">✕</button>
     </div>
   </div>`;
 }
@@ -2678,43 +1959,26 @@ function _txRow(t){
 function startEditTx(id){
   const t=S.transactions.find(x=>x.id===id); if(!t) return;
   const row=document.querySelector(`[data-txid="${id}"]`); if(!row) return;
+  const orig=row.innerHTML;
   row.innerHTML=`
-    <input type="date" value="${t.date}" id="etx_d_${id}" style="width:120px;font-size:13px;padding:5px 8px;flex-shrink:0;">
-    <input type="text" value="${t.desc}" id="etx_n_${id}" style="flex:1;font-size:13px;padding:5px 8px;" oninput="autoCategory(this.value,'etx_c_${id}')">
-    <select id="etx_c_${id}" style="font-size:13px;padding:5px 8px;flex-shrink:0;">
+    <input type="date" value="${t.date}" id="etx_d_${id}" style="width:120px;font-size:12px;padding:4px 6px;flex-shrink:0;">
+    <input type="text" value="${t.desc}" id="etx_n_${id}" style="flex:1;font-size:12px;padding:4px 6px;" oninput="autoCategory(this.value,'etx_c_${id}')">
+    <select id="etx_c_${id}" style="font-size:12px;padding:4px 6px;flex-shrink:0;">
       ${['Food','Transport','Shopping','Health','Entertainment','Subscriptions','Other'].map(x=>`<option${x===t.category?' selected':''}>${x}</option>`).join('')}
     </select>
-    <input type="number" value="${t.amount}" id="etx_a_${id}" step="0.01" min="0" style="width:90px;font-size:13px;padding:5px 8px;text-align:right;flex-shrink:0;">
+    <input type="number" value="${t.amount}" id="etx_a_${id}" step="0.01" min="0" style="width:80px;font-size:12px;padding:4px 6px;text-align:right;flex-shrink:0;">
     <button class="btn btn-xs btn-green" onclick="saveEditTx('${id}')">✓</button>
     <button class="btn btn-xs" onclick="renderTracker()">✕</button>`;
   row.style.cssText='display:flex;align-items:center;gap:6px;padding:8px 12px;background:var(--bg3);border-bottom:1px solid var(--border);flex-wrap:wrap;';
-
-  const fields=['etx_d_','etx_n_','etx_c_','etx_a_'];
-  fields.forEach(p=>{
+  ['etx_d_','etx_n_','etx_c_','etx_a_'].forEach(p=>{
     const el=document.getElementById(p+id);
-    if(!el) return;
-    // Enter saves
-    el.addEventListener('keydown',e=>{
-      if(e.key==='Enter'){ e.preventDefault(); saveEditTx(id); }
-      if(e.key==='Escape') renderTracker();
-    });
-    // Click-off saves: blur fires, check if focus went outside the row
-    el.addEventListener('blur',()=>{
-      setTimeout(()=>{
-        const r=document.querySelector(`[data-txid="${id}"]`);
-        if(r && !r.contains(document.activeElement)){
-          saveEditTx(id);
-        }
-      }, 150);
-    });
+    if(el) el.addEventListener('keydown',e=>{ if(e.key==='Enter') saveEditTx(id); if(e.key==='Escape') renderTracker(); });
   });
-
   document.getElementById('etx_n_'+id)?.focus();
 }
 
-
 function renderAllPanels() {
-  recalcRollover();
+  recalcRollover();        // recalcs rollover field in S but does NOT call saveState
   renderDashboard();
   renderBills();
   renderSavingsView();
@@ -2769,6 +2033,7 @@ function navTo(view){
   document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id==='view-'+view));
   renderView(view);
 }
+
 function renderView(v){
   if(v==='dashboard') renderDashboard();
   else if(v==='calendar') renderCalendar();
@@ -2779,8 +2044,6 @@ function renderView(v){
   else if(v==='tracker') renderTracker();
   else if(v==='settings') loadSettingsUI();
 }
-
-
 
 function openIncModal(){
   document.getElementById('inc_desc').value='';
@@ -2833,7 +2096,7 @@ function setSyncStatus(status,msg){
   const label=document.getElementById('syncStripMsg');
   if(strip&&dot&&label){
     if(!msg){strip.style.display='none';return;}
-    strip.style.display='inline-flex';
+    strip.style.display='flex';
     dot.style.background=status==='synced'?'var(--green)':status==='syncing'?'var(--yellow)':status==='error'?'var(--red)':'var(--text3)';
     label.style.color=dot.style.background;
     label.textContent=msg;
@@ -3150,65 +2413,6 @@ async function forcePullFromDrive() {
     startY = 0;
   }, { passive: true });
 })();
-
-
-// ════════════════════════════════════════════════════════════
-// SWIPE GESTURES (mobile transactions)
-// Right = delete (red), Left = edit (blue)
-// ════════════════════════════════════════════════════════════
-function initSwipeRow(el, onDelete, onEdit){
-  let startX=0, startY=0, dx=0, locked=false, axis=null;
-  const content=el.querySelector('.swipe-content');
-  const bgL=el.querySelector('.swipe-bg.left');
-  const bgR=el.querySelector('.swipe-bg.right');
-  if(!content) return;
-
-  el.addEventListener('touchstart',e=>{
-    startX=e.touches[0].clientX;
-    startY=e.touches[0].clientY;
-    dx=0; axis=null; locked=false;
-    content.style.transition='none';
-  },{passive:true});
-
-  el.addEventListener('touchmove',e=>{
-    const cx=e.touches[0].clientX, cy=e.touches[0].clientY;
-    const adx=Math.abs(cx-startX), ady=Math.abs(cy-startY);
-    if(!axis) axis=adx>ady?'x':'y';
-    if(axis==='y') return;
-    dx=cx-startX;
-    const limit=80;
-    const clamped=Math.max(-limit,Math.min(limit,dx));
-    content.style.transform=`translateX(${clamped}px)`;
-    if(bgL) bgL.style.opacity=dx<-20?Math.min(1,(Math.abs(dx)-20)/40):'0';
-    if(bgR) bgR.style.opacity=dx>20?Math.min(1,(dx-20)/40):'0';
-    if(Math.abs(dx)>10) e.preventDefault();
-  },{passive:false});
-
-  el.addEventListener('touchend',()=>{
-    content.style.transition='transform .2s ease';
-    if(bgL) bgL.style.opacity='0';
-    if(bgR) bgR.style.opacity='0';
-    if(dx<-60 && onEdit){ content.style.transform='translateX(0)'; onEdit(); }
-    else if(dx>60 && onDelete){ content.style.transform='translateX(0)'; onDelete(); }
-    else content.style.transform='translateX(0)';
-    dx=0;
-  },{passive:true});
-}
-
-function attachSwipe(container){
-  if(!container) return;
-  // Only attach on mobile
-  if(window.innerWidth>680) return;
-  container.querySelectorAll('.swipe-row[data-txid]').forEach(row=>{
-    const id=row.dataset.txid;
-    if(row._swipeInit) return;
-    row._swipeInit=true;
-    initSwipeRow(row,
-      ()=>{ if(confirm('Delete this transaction?')) removeTransaction(id); },
-      ()=>startEditTx(id)
-    );
-  });
-}
 
 // ── Wiring ────────────────────────────────────────────────────
 document.getElementById('calPrev').onclick = () => { calDate.setMonth(calDate.getMonth()-1); renderCalendar(); };
