@@ -943,32 +943,18 @@ select option{background:var(--bg3);}
             </div>
           </div>
 
-          <!-- Paycheck mode: weekly / per-check / percent -->
+          <!-- Paycheck mode: simple monthly savings amount -->
           <div id="savPaycheckForm" style="display:none;">
-            <div style="font-family:var(--mono);font-size:11px;color:var(--text3);letter-spacing:.06em;margin-bottom:10px;">HOW DO YOU WANT TO THINK ABOUT SAVINGS?</div>
+            <div style="font-size:13px;color:var(--text2);margin-bottom:12px;">Set how much you want to save each month. This comes out of your running balance automatically — you don't need to think about which check it comes from.</div>
             <div class="form-row" style="margin-bottom:14px;">
-              <div class="fg" style="flex:0;min-width:200px;">
-                <label>Savings Type</label>
-                <select id="savPaycheckType" onchange="onSavPaycheckTypeChange()">
-                  <option value="weekly">Weekly amount ($)</option>
-                  <option value="percheck">Per check ($)</option>
-                  <option value="percent">Percentage of check (%)</option>
-                </select>
-              </div>
-              <div class="fg">
-                <label id="savPaycheckAmtLabel">Amount per week ($)</label>
-                <input type="number" id="savPaycheckAmt" placeholder="0.00" step="0.01" min="0"
-                  oninput="updateSavPaycheckConversion()"
-                  onchange="saveSavingsPaycheck()"
+              <div class="fg"><label>Monthly Savings Goal ($)</label>
+                <input type="number" id="savPaycheckAmt" placeholder="500" step="1" min="0"
                   onkeydown="if(event.key==='Enter')saveSavingsPaycheck()"
-                  onfocus="this.select()">
-              </div>
-              <div class="fg" style="flex:0;min-width:70px;">
-                <label>&nbsp;</label>
-                <button class="btn btn-green" onclick="saveSavingsPaycheck()">Save</button>
-              </div>
+                  onfocus="this.select()"></div>
+              <div class="fg" style="flex:0;min-width:70px;"><label>&nbsp;</label>
+                <button class="btn btn-green" onclick="saveSavingsPaycheck()">Save</button></div>
             </div>
-            <div style="padding:10px 14px;background:var(--bg3);border-radius:var(--radius);font-size:13px;color:var(--text2);border:1px solid var(--border2);" id="savPaycheckConversion"></div>
+            <div id="savPaycheckConversion"></div>
           </div>
           <div style="padding:14px;background:var(--bg3);border-radius:var(--radius);">
             <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:6px;" id="savingsDisplayLabel">MONTHLY SAVINGS</div>
@@ -1277,13 +1263,10 @@ function calcWeeklyFund(){
       return s+perCheck/2;
     },0);
 
-    // Average weekly tips (4-week rolling)
+    // Tips are NOT included in baseline weekly fund — they're bonus
+    // Tips credited in rollover and safe-to-spend when actually logged
     const now=new Date();
-    const fourWkAgo=new Date(now); fourWkAgo.setDate(now.getDate()-28);
-    const avgWkTips=(S.income.tips||[]).filter(t=>new Date(t.date+'T00:00:00')>=fourWkAgo)
-      .reduce((s,t)=>s+t.amount,0)/4;
-
-    const totalWeeklyIn = weeklyIncome + avgWkTips;
+    const totalWeeklyIn = weeklyIncome;
 
     // Bills assigned to THIS week's check slot — subtracted in full (not divided)
     const weekOfMonth = Math.ceil(now.getDate()/7);
@@ -1817,14 +1800,13 @@ function calcMonthlyIncome(){
   } else if(im.mode==='hourly'){
     base = (im.hourlyRate||0)*(im.weeklyHours||0)*52/12;
   } else if(im.mode==='paycheck'){
-    // paycheck — sum all paychecks + tips this month
+    // paycheck — CHECKS ONLY for baseline income (tips are bonus, not baseline)
+    // Tips are credited separately in rollover and safe-to-spend
     const now=new Date(); const y=now.getFullYear(),m=now.getMonth();
     const monthStr=`${y}-${String(m+1).padStart(2,'0')}`;
-    const checkTotal=(S.income.jobs||[]).reduce((s,job)=>{
+    base=(S.income.jobs||[]).reduce((s,job)=>{
       return s+(job.checks||[]).filter(ch=>ch.date.startsWith(monthStr)).reduce((ss,ch)=>ss+ch.amount,0);
     },0);
-    const tipTotal=(S.income.tips||[]).filter(t=>t.date.startsWith(monthStr)).reduce((s,t)=>s+t.amount,0);
-    base=checkTotal+tipTotal;
   } else {
     // variable — sum income log for current month
     const now=new Date(); const y=now.getFullYear(),m=now.getMonth();
@@ -1843,9 +1825,11 @@ function calcSavings(income){
 }
 
 function calcSpendingFund(){
-  if(isPaycheckMode()) return calcWeeklyFund(); // weekly spending fund
-  const inc=calcMonthlyIncome(), bills=calcBillsMonthly(), sav=calcSavings(inc);
-  return Math.max(0, inc-bills-sav);
+  // Always return monthly spendable — used for progress bars and monthly stats
+  const inc = calcMonthlyIncome();
+  const bills = calcBillsMonthly();
+  const sav = calcSavings(inc);
+  return Math.max(0, inc - bills - sav);
 }
 
 
@@ -1877,36 +1861,47 @@ function calcPaycheckWeekIncome(){
 // Running spendable balance: all checks + tips ever logged, minus all transactions
 // This is the "what do I actually have available" number
 function calcPaycheckRunningBalance(){
-  // All money ever received via paychecks + tips
-  const totalIn = (S.income.jobs||[]).reduce((s,j)=>
-    (j.checks||[]).reduce((ss,ch)=>ss+ch.amount,s), 0)
-    + (S.income.tips||[]).reduce((s,t)=>s+t.amount,0);
-  // All spending logged
+  // Total money in: all checks + all tips ever logged
+  const totalChecksIn = (S.income.jobs||[]).reduce((s,j)=>
+    (j.checks||[]).reduce((ss,ch)=>ss+ch.amount,s), 0);
+  const totalTipsIn = (S.income.tips||[]).reduce((s,t)=>s+t.amount,0);
+  const totalIn = totalChecksIn + totalTipsIn;
+
+  // Total spending logged
   const totalSpent = S.transactions.reduce((s,t)=>s+t.amount,0);
-  // Bills marked paid (money already out)
-  const now=new Date();
+
+  // Bills marked paid (actual cash out for bills)
   const billsPaid = Object.entries(S.billPaid||{}).filter(([k,v])=>v).reduce((s,[k])=>{
-    const billId=k.split('_')[0];
-    const b=S.bills.find(x=>x.id===billId);
+    const billId = k.split('_')[0];
+    const b = S.bills.find(x=>x.id===billId);
     return b ? s+b.amount : s;
   },0);
-  // Savings reserved (per check × checks received)
-  const totalChecks=(S.income.jobs||[]).reduce((s,j)=>(j.checks||[]).length+s,0);
-  const cpm=checksPerMonth()||1;
-  const moIncome=calcMonthlyIncome();
-  const savPerCheck=calcSavings(moIncome)/cpm;
-  const savingsReserved=savPerCheck*totalChecks;
+
+  // Savings reserved: monthly savings goal × number of months with check activity
+  // Approximate: total checks received ÷ checks per month × monthly savings
+  const totalCheckCount = (S.income.jobs||[]).reduce((s,j)=>(j.checks||[]).length+s,0);
+  const cpm = checksPerMonth()||1;
+  const monthsOfChecks = totalCheckCount / cpm;
+  const monthlySavings = calcSavings(totalChecksIn / Math.max(1,monthsOfChecks));
+  const savingsReserved = monthlySavings * monthsOfChecks;
+
   return totalIn - totalSpent - billsPaid - savingsReserved;
 }
 
 function calcDailyAllowance(){
   if(isPaycheckMode()){
-    // In paycheck mode: weekly fund ÷ 7
-    // Weekly fund = (expected weekly income) - (weekly bills) - (weekly savings)
-    return calcWeeklyFund() / 7;
+    // Monthly spendable ÷ 30 — same logic as other modes, just using check-based income
+    // Tips are NOT included in baseline — they're credited as bonus in rollover
+    const inc   = calcMonthlyIncome(); // checks only this month
+    const bills = calcBillsMonthly();
+    const sav   = calcSavings(inc);
+    const monthly = Math.max(0, inc - bills - sav);
+    // Use 30 days as fixed divisor in paycheck mode for stability
+    // (avoids daily allowance changing mid-month as more checks arrive)
+    return monthly / 30;
   }
   const days = currentMonthDays();
-  return calcSpendingFund()/days;
+  return calcSpendingFund() / days;
 }
 
 function calcDailyAllowanceRemaining(){
@@ -1922,10 +1917,14 @@ function getTodaySpent(){
 }
 
 function calcSafeToSpend(){
-  const daily=calcDailyAllowance();
-  const roll=S.settings.rollover||0;
-  const spent=getTodaySpent();
-  return daily+roll-spent;
+  const daily = calcDailyAllowance();
+  const roll  = S.settings.rollover||0;
+  const spent = getTodaySpent();
+  // In paycheck mode, today's tips are immediately spendable — add to safe amount
+  const todayTips = isPaycheckMode()
+    ? (S.income.tips||[]).filter(t=>t.date===todayStr()).reduce((s,t)=>s+t.amount,0)
+    : 0;
+  return daily + roll + todayTips - spent;
 }
 
 function calcAvgDailySpend(){
@@ -2084,10 +2083,10 @@ function renderDashboard(){
   const rollC=roll<0?'r':roll<daily*3?'y':'g';
 
   document.getElementById('statGrid').innerHTML = isPaycheckMode() ? `
-    <div class="stat" data-tip="Running spendable balance — all checks + tips received, minus spending and bills/savings.\nCarries forward automatically.">
-      <div class="stat-lbl">Available Balance</div>
+    <div class="stat" data-tip="Running balance — all checks + tips logged, minus spending, bills paid, and savings reserved.">
+      <div class="stat-lbl">Running Balance</div>
       <div class="stat-val" style="color:${calcPaycheckRunningBalance()<0?'var(--red)':'var(--green)'};">${fmt(calcPaycheckRunningBalance())}</div>
-      <div class="stat-sub">${fmt(calcPaycheckWeekIncome())} received this week</div>
+      <div class="stat-sub">${(()=>{ const wk=calcPaycheckWeekIncome(); const tips=(S.income.tips||[]).filter(t=>t.date===todayStr()).reduce((s,t)=>s+t.amount,0); return wk>0?(fmt(wk)+' this week'+(tips>0?' · '+fmt(tips)+' tips today':'')):tips>0?fmt(tips)+' tips today':'No income logged yet'; })()}</div>
     </div>
     <div class="stat" data-tip="Bills assigned to this week's check.\nAssign bills to check slots in the Bills tab.">
       <div class="stat-lbl">This Check's Bills</div>
@@ -2828,25 +2827,9 @@ function updateSavPaycheckConversion(){
 }
 
 function saveSavingsPaycheck(){
-  const t=document.getElementById('savPaycheckType')?.value||'weekly';
-  const amt=parseFloat(document.getElementById('savPaycheckAmt')?.value)||0;
-  const cpm=checksPerMonth()||2;
-  // Convert to monthly fixed amount for internal storage
-  let monthly=0;
-  if(t==='weekly') monthly=amt*4.33;
-  else if(t==='percheck') monthly=amt*cpm;
-  else {
-    // percent — store as percent type
-    S.savings.type='percent';
-    S.savings.amount=amt;
-    S.savings.paycheckType=t;
-    S.savings.paycheckAmt=amt;
-    saveState(); renderSavingsView(); renderDashboard(); return;
-  }
-  S.savings.type='fixed';
-  S.savings.amount=parseFloat(monthly.toFixed(2));
-  S.savings.paycheckType=t;
-  S.savings.paycheckAmt=amt;
+  const amt = parseFloat(document.getElementById('savPaycheckAmt')?.value)||0;
+  S.savings.type = 'fixed';
+  S.savings.amount = amt;
   saveState(); renderSavingsView(); renderDashboard();
 }
 
@@ -2862,15 +2845,22 @@ function renderSavingsView(){
   if(pcForm)  pcForm.style.display  = paycheck ? 'block' : 'none';
 
   if(paycheck){
-    // Restore paycheck form values
-    const pt = S.savings.paycheckType||'weekly';
-    const pa = S.savings.paycheckAmt||0;
-    const ptEl = document.getElementById('savPaycheckType');
+    // Restore paycheck form — simple monthly amount
     const paEl = document.getElementById('savPaycheckAmt');
-    if(ptEl) ptEl.value = pt;
-    if(paEl) paEl.value = pa||'';
-    onSavPaycheckTypeChange();
-    if(pa) updateSavPaycheckConversion();
+    if(paEl) paEl.value = S.savings.amount||'';
+    // Show breakdown in conversion div
+    const convEl = document.getElementById('savPaycheckConversion');
+    if(convEl && S.savings.amount){
+      const mo = S.savings.amount;
+      const wk = mo/4.33;
+      const cpm2 = checksPerMonth()||2;
+      const pc = mo/cpm2;
+      convEl.innerHTML=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;padding:12px;background:var(--bg3);border-radius:var(--radius);">
+        <div><div style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-bottom:3px;">PER WEEK</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--blue);">${fmt(wk)}</div></div>
+        <div><div style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-bottom:3px;">PER CHECK (${cpm2}/mo)</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--blue);">${fmt(pc)}</div></div>
+        <div><div style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-bottom:3px;">YEARLY</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--blue);">${fmt(mo*12)}</div></div>
+      </div>`;
+    } else if(convEl) convEl.innerHTML='';
   } else {
     document.getElementById('sav_val').value = S.savings.amount||0;
     setSavType(S.savings.type);
@@ -2954,15 +2944,33 @@ function saveEditTx(id){
 }
 
 function recalcRollover(){
-  const daily=calcDailyAllowance();
-  const groups={};
-  S.transactions.forEach(t=>{ groups[t.date]=(groups[t.date]||0)+t.amount; });
-  const today=todayStr();
-  let roll=0;
-  Object.entries(groups).sort().forEach(([date,spent])=>{ if(date<today) roll+=daily-spent; });
-  S.settings.rollover=parseFloat(roll.toFixed(2));
-  // Update display element in settings if visible
-  const rd=document.getElementById('set_rollover_display');
+  const daily = calcDailyAllowance();
+  const today = todayStr();
+
+  // Group spending by date
+  const spent = {};
+  S.transactions.forEach(t=>{ spent[t.date]=(spent[t.date]||0)+t.amount; });
+
+  // Group tips by date (in paycheck mode, tips are extra income credited per day)
+  const tipsPerDay = {};
+  if(isPaycheckMode()){
+    (S.income.tips||[]).forEach(t=>{ tipsPerDay[t.date]=(tipsPerDay[t.date]||0)+t.amount; });
+  }
+
+  // Collect all past dates that have activity
+  const allDates = new Set([...Object.keys(spent), ...Object.keys(tipsPerDay)]);
+
+  let roll = 0;
+  [...allDates].sort().forEach(date=>{
+    if(date >= today) return;
+    const daySpent   = spent[date]||0;
+    const dayTips    = tipsPerDay[date]||0;
+    const dayIncome  = daily + dayTips; // allowance + any tips that day
+    roll += dayIncome - daySpent;
+  });
+
+  S.settings.rollover = parseFloat(roll.toFixed(2));
+  const rd = document.getElementById('set_rollover_display');
   if(rd){ const r=S.settings.rollover; rd.textContent=(r>=0?'':'-')+'$'+Math.abs(r).toFixed(2); rd.style.color=r<0?'var(--red)':r===0?'var(--text2)':'var(--green)'; }
 }
 
