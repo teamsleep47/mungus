@@ -1185,6 +1185,43 @@ function checksPerMonth(){
 }
 
 // Weekly spending fund (paycheck mode)
+
+// Get projected check dates for a job based on its nextCheckDate anchor
+function getJobCheckDates(job, monthsAhead){
+  if(!job.nextCheckDate) return [];
+  const anchor = new Date(job.nextCheckDate+'T00:00:00');
+  const dates = [];
+  const intervalDays = job.frequency==='weekly'?7 : job.frequency==='monthly'?30.5 : 14;
+  const now = new Date(); now.setHours(0,0,0,0);
+  const future = new Date(now); future.setDate(now.getDate()+(monthsAhead||1)*31);
+
+  // Go back up to 3 months to find past dates
+  let d = new Date(anchor);
+  while(d > new Date(now.getFullYear(), now.getMonth()-3, 1)){
+    d = new Date(d.getTime() - intervalDays*86400000);
+  }
+  // Walk forward collecting dates up to future
+  while(d <= future){
+    const ld=new Date(d); dates.push(ld.getFullYear()+'-'+String(ld.getMonth()+1).padStart(2,'0')+'-'+String(ld.getDate()).padStart(2,'0'));
+    d = new Date(d.getTime() + intervalDays*86400000);
+  }
+  return dates;
+}
+
+// Get the most recent expected check date for a job (on or before today)
+function getLatestCheckDate(job){
+  const dates = getJobCheckDates(job, 0);
+  const today = todayStr();
+  return dates.filter(d=>d<=today).pop() || null;
+}
+
+// Get the next upcoming check date for a job (after today)
+function getNextCheckDate(job){
+  const dates = getJobCheckDates(job, 2);
+  const today = todayStr();
+  return dates.find(d=>d>today) || null;
+}
+
 function calcWeeklyFund(){
   // Bills as weekly equivalent
   const weeklyBills = S.bills.reduce((s,b)=>{
@@ -1241,22 +1278,28 @@ function updateCheckSlotOptions(){
   wrap.style.display='';
   const jobs=S.income.jobs||[];
   const options=['<option value="">Unassigned</option>'];
-  // Build from each job's weekSlots
+  const now = new Date();
+  const monthStr = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
   jobs.forEach(j=>{
-    const slots=j.weekSlots||[];
-    slots.forEach((wk,i)=>{
-      const label=jobs.length>1?`Week ${wk} — ${j.name}`:`Week ${wk}`;
-      options.push(`<option value="week_${wk}">${label}</option>`);
-    });
-    // Fallback if no weekSlots saved yet
-    if(!slots.length){
+    if(j.nextCheckDate){
+      // Get dates in current month from schedule
+      const dates = getJobCheckDates(j, 1.5);
+      const thisMonth = dates.filter(d=>d.startsWith(monthStr));
+      thisMonth.forEach(d=>{
+        const dt = new Date(d+'T00:00:00');
+        const wk = Math.ceil(dt.getDate()/7);
+        const dayLabel = dt.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+        const label = (jobs.length>1 ? j.name+' — ' : '')+dayLabel+' (Week '+wk+')';
+        options.push(`<option value="week_${wk}">${label}</option>`);
+      });
+    } else {
       const count=j.frequency==='weekly'?4:j.frequency==='monthly'?1:2;
       for(let i=0;i<count;i++){
-        const wk=i+1;
-        options.push(`<option value="week_${wk}">${jobs.length>1?`Week ${wk} — ${j.name}`:`Week ${wk}`}</option>`);
+        options.push(`<option value="week_${i+1}">${jobs.length>1?`Week ${i+1} — ${j.name}`:`Week ${i+1}`}</option>`);
       }
     }
   });
+  if(options.length===1) options.push('<option value="" disabled>Set job pay dates to enable assignment</option>');
   sel.innerHTML=options.join('');
 }
 
@@ -1273,16 +1316,18 @@ function renderJobsList(){
         <input type="text" id="newJobName" placeholder="Walmart, McDonalds…"
           onkeydown="if(event.key==='Enter')saveNewJob();if(event.key==='Escape')closeAddJobForm()"></div>
       <div class="fg"><label>Pay Frequency</label>
-        <select id="newJobFreq" onchange="updateJobWeekFields()">
-          <option value="biweekly">Bi-weekly (2 checks/month)</option>
-          <option value="weekly">Weekly (4 checks/month)</option>
-          <option value="monthly">Monthly (1 check/month)</option>
+        <select id="newJobFreq">
+          <option value="biweekly">Bi-weekly</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
         </select></div>
       <div class="fg"><label>Expected Amount ($)</label>
         <input type="number" id="newJobExpected" placeholder="0.00" step="0.01" min="0"
           onkeydown="if(event.key==='Enter')saveNewJob();if(event.key==='Escape')closeAddJobForm()"></div>
+      <div class="fg"><label>Next Check Date</label>
+        <input type="date" id="newJobNextCheck" title="When does your next check arrive? The app calculates all future dates from this."></div>
     </div>
-    <div id="jobWeekFields" style="margin-bottom:10px;"></div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Next check date lets the app automatically know your pay schedule — which Friday, which week, etc.</div>
     <div style="display:flex;gap:8px;">
       <button class="btn btn-green btn-sm" onclick="saveNewJob()">Add Job</button>
       <button class="btn btn-sm" onclick="closeAddJobForm()">Cancel</button>
@@ -1305,12 +1350,18 @@ function renderJobsList(){
     const wkTotal=wkChecks.reduce((s,c)=>s+c.amount,0);
     const recent=checks.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
     const freqLabel={weekly:'Weekly',biweekly:'Bi-weekly',monthly:'Monthly'}[job.frequency]||job.frequency;
+        const upcomingDates=job.nextCheckDate?getJobCheckDates(job,2).filter(d=>d>=todayStr()).slice(0,3):[];
+        const nextCheckStr=upcomingDates[0]||null;
+        const nextCheckLabel=nextCheckStr?new Date(nextCheckStr+'T00:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}):null;
 
     return `<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius2);padding:14px;margin-bottom:12px;">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;">
         <div>
           <div style="font-size:15px;font-weight:700;">${job.name}</div>
-          <div style="font-size:12px;color:var(--text3);font-family:var(--mono);margin-top:2px;">${freqLabel}${job.expected?' · Expected ~'+fmt(job.expected):''}</div>
+          <div style="font-size:12px;color:var(--text3);font-family:var(--mono);margin-top:2px;">
+          ${freqLabel}${job.expected?' · Expected ~'+fmt(job.expected):''}
+          ${job.nextCheckDate?` · Next: ${getNextCheckDate(job)||'—'}`:''}
+        </div>
         </div>
         <div style="display:flex;gap:6px;align-items:center;">
           <div style="text-align:right;">
@@ -1381,8 +1432,15 @@ function toggleAddJobForm(){
   const f=document.getElementById('addJobForm');
   if(f){ f.style.display=f.style.display==='none'?'block':'none';
     if(f.style.display==='block'){
+      // Pre-fill next check date with coming Friday
+      const nf=document.getElementById('newJobNextCheck');
+      if(nf&&!nf.value){
+        const d=new Date(); const day=d.getDay();
+        const daysUntilFri = (5-day+7)%7 || 7; // next Friday
+        d.setDate(d.getDate()+daysUntilFri);
+        nf.value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+      }
       document.getElementById('newJobName')?.focus();
-      updateJobWeekFields(); // init week fields for default frequency
     }
   }
 }
@@ -1424,14 +1482,15 @@ function saveNewJob(){
   const name=(document.getElementById('newJobName')?.value||'').trim();
   const freq=document.getElementById('newJobFreq')?.value||'biweekly';
   const expected=parseFloat(document.getElementById('newJobExpected')?.value)||0;
+  const nextCheck=document.getElementById('newJobNextCheck')?.value||todayStr();
   if(!name) return;
   if(!S.income.jobs) S.income.jobs=[];
-  const count = freq==='weekly'?4 : freq==='monthly'?1 : 2;
-  const weekSlots = Array.from({length:count},(_,i)=>{
-    const el=document.getElementById('newJobWeek_'+i);
-    return el ? parseInt(el.value)||i+1 : i+1;
+  S.income.jobs.push({
+    id:Date.now().toString(),
+    name, frequency:freq, expected,
+    nextCheckDate:nextCheck,  // anchor date — app derives all future dates from this
+    checks:[]
   });
-  S.income.jobs.push({id:Date.now().toString(),name,frequency:freq,expected,weekSlots,checks:[]});
   saveState(); renderJobsList(); updateCheckSlotOptions(); renderIncomeView();
 }
 function removeJob(id){
@@ -1570,10 +1629,21 @@ function renderPaycheckDash(){
   const bpc    = billsPerCheck();
   const spc    = calcSavings(income) / cpm;
 
-  // Which week of month are we in? (1-4)
   const now=new Date();
   const weekOfMonth = Math.ceil(now.getDate()/7);
   const weekSlot = `week_${weekOfMonth}`;
+  const todayStr_=todayStr();
+  const sevenFwd=new Date(now); sevenFwd.setDate(now.getDate()+7);
+  const sevenFwdStr=sevenFwd.getFullYear()+'-'+String(sevenFwd.getMonth()+1).padStart(2,'0')+'-'+String(sevenFwd.getDate()).padStart(2,'0');
+
+  // Find which job has a check this week (rolling 7-day window)
+  const sevenDaysAgo=new Date(now); sevenDaysAgo.setDate(now.getDate()-6);
+  const weekCutoff=sevenDaysAgo.getFullYear()+'-'+String(sevenDaysAgo.getMonth()+1).padStart(2,'0')+'-'+String(sevenDaysAgo.getDate()).padStart(2,'0');
+  let thisWeekJob=null;
+  (S.income.jobs||[]).forEach(j=>{
+    const dates=j.nextCheckDate?getJobCheckDates(j,0.5):[];
+    if(dates.some(d=>d>=weekCutoff&&d<=todayStr_)) thisWeekJob=j;
+  });
 
   // Bills assigned to THIS week's check slot
   const thisWeekBills = S.bills.filter(b=>b.checkSlot===weekSlot);
@@ -1684,6 +1754,57 @@ function calcSpendingFund(){
   if(isPaycheckMode()) return calcWeeklyFund(); // weekly spending fund
   const inc=calcMonthlyIncome(), bills=calcBillsMonthly(), sav=calcSavings(inc);
   return Math.max(0, inc-bills-sav);
+}
+
+
+// Week start using LOCAL date (Monday-based to match most pay weeks)
+function localWeekStart(){
+  const now = new Date();
+  const day = now.getDay(); // 0=Sun, 1=Mon...
+  // Use Monday as week start
+  const diff = (day===0) ? -6 : 1-day;
+  const ws = new Date(now);
+  ws.setDate(now.getDate()+diff);
+  ws.setHours(0,0,0,0);
+  // Return as YYYY-MM-DD in local time
+  return ws.getFullYear()+'-'+String(ws.getMonth()+1).padStart(2,'0')+'-'+String(ws.getDate()).padStart(2,'0');
+}
+
+// Total checks + tips received in the current calendar week (Mon–Sun local)
+function calcPaycheckWeekIncome(){
+  // Use rolling 7-day window ending today — catches any Friday check regardless of week boundary
+  const now = new Date();
+  const sevenDaysAgo = new Date(now); sevenDaysAgo.setDate(now.getDate()-6); sevenDaysAgo.setHours(0,0,0,0);
+  const cutoff = sevenDaysAgo.getFullYear()+'-'+String(sevenDaysAgo.getMonth()+1).padStart(2,'0')+'-'+String(sevenDaysAgo.getDate()).padStart(2,'0');
+  const checks = (S.income.jobs||[]).reduce((s,j)=>
+    (j.checks||[]).filter(ch=>ch.date>=cutoff).reduce((ss,ch)=>ss+ch.amount,s), 0);
+  const tips = (S.income.tips||[]).filter(t=>t.date>=cutoff).reduce((s,t)=>s+t.amount,0);
+  return checks+tips;
+}
+
+// Running spendable balance: all checks + tips ever logged, minus all transactions
+// This is the "what do I actually have available" number
+function calcPaycheckRunningBalance(){
+  // All money ever received via paychecks + tips
+  const totalIn = (S.income.jobs||[]).reduce((s,j)=>
+    (j.checks||[]).reduce((ss,ch)=>ss+ch.amount,s), 0)
+    + (S.income.tips||[]).reduce((s,t)=>s+t.amount,0);
+  // All spending logged
+  const totalSpent = S.transactions.reduce((s,t)=>s+t.amount,0);
+  // Bills marked paid (money already out)
+  const now=new Date();
+  const billsPaid = Object.entries(S.billPaid||{}).filter(([k,v])=>v).reduce((s,[k])=>{
+    const billId=k.split('_')[0];
+    const b=S.bills.find(x=>x.id===billId);
+    return b ? s+b.amount : s;
+  },0);
+  // Savings reserved (per check × checks received)
+  const totalChecks=(S.income.jobs||[]).reduce((s,j)=>(j.checks||[]).length+s,0);
+  const cpm=checksPerMonth()||1;
+  const moIncome=calcMonthlyIncome();
+  const savPerCheck=calcSavings(moIncome)/cpm;
+  const savingsReserved=savPerCheck*totalChecks;
+  return totalIn - totalSpent - billsPaid - savingsReserved;
 }
 
 function calcDailyAllowance(){
@@ -1871,16 +1992,10 @@ function renderDashboard(){
   const rollC=roll<0?'r':roll<daily*3?'y':'g';
 
   document.getElementById('statGrid').innerHTML = isPaycheckMode() ? `
-    <div class="stat" data-tip="Total checks + tips received this week.">
-      <div class="stat-lbl">Income This Week</div>
-      <div class="stat-val" style="color:var(--green);">${fmt((() => {
-        const now=new Date(), wkStart=new Date(now); wkStart.setDate(now.getDate()-now.getDay()); wkStart.setHours(0,0,0,0);
-        const wkStr=wkStart.toISOString().slice(0,10);
-        const checks=(S.income.jobs||[]).reduce((s,j)=>(j.checks||[]).filter(ch=>ch.date>=wkStr).reduce((ss,c)=>ss+c.amount,s),0);
-        const tips=(S.income.tips||[]).filter(t=>t.date>=wkStart.toISOString().slice(0,10)).reduce((s,t)=>s+t.amount,0);
-        return checks+tips;
-      })())}</div>
-      <div class="stat-sub">${checksPerMonth()} checks/month</div>
+    <div class="stat" data-tip="Running spendable balance — all checks + tips received, minus spending and bills/savings.\nCarries forward automatically.">
+      <div class="stat-lbl">Available Balance</div>
+      <div class="stat-val" style="color:${calcPaycheckRunningBalance()<0?'var(--red)':'var(--green)'};">${fmt(calcPaycheckRunningBalance())}</div>
+      <div class="stat-sub">${fmt(calcPaycheckWeekIncome())} received this week</div>
     </div>
     <div class="stat" data-tip="Bills assigned to this week's check.\nAssign bills to check slots in the Bills tab.">
       <div class="stat-lbl">This Check's Bills</div>
