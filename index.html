@@ -512,13 +512,14 @@ select option{background:var(--bg3);}
   body{font-size:15px;}
   .tbl td{font-size:14px;}
   .badge{font-size:11px;padding:3px 8px;}
-  /* Dashboard mobile card order */
+  /* Dashboard mobile card order via flex */
+  #view-dashboard{display:flex !important;flex-direction:column;}
   #view-dashboard>#alertBanner{order:0;}
   #view-dashboard>#paycheckDashCard{order:1;}
-  #view-dashboard>.card:nth-child(3){order:2;} /* Financial Overview */
-  #view-dashboard>.card:nth-child(5){order:3;} /* Quick Spend */
-  #view-dashboard>.card:nth-child(4){order:4;} /* Today's Activity */
-  #view-dashboard>.card:nth-child(6){order:5;} /* Bills This Month */
+  #view-dashboard>.card:nth-child(3){order:2;}
+  #view-dashboard>.card:nth-child(5){order:3;}
+  #view-dashboard>.card:nth-child(4){order:4;}
+  #view-dashboard>.card:nth-child(6){order:5;}
 }
 @media(max-width:380px){
   .stat-grid{grid-template-columns:1fr 1fr;}
@@ -715,7 +716,7 @@ select option{background:var(--bg3);}
     <main class="content" id="mainContent">
 
       <!-- ── DASHBOARD ────────────────────────────────── -->
-      <div class="view active" id="view-dashboard" style="display:flex;flex-direction:column;">
+      <div class="view active" id="view-dashboard">
         <div id="alertBanner"></div>
         <div id="paycheckDashCard"></div>
         <div class="card">
